@@ -8,12 +8,17 @@
 # Mechanism: replace the binaries with a guard, then NoExtract those paths so
 # pacman never restores the originals on an omarchy package update.
 #
-#   ./block-omarchy-updates.sh          # install the guards
-#   ./block-omarchy-updates.sh --undo   # restore the originals
-#   ./block-omarchy-updates.sh --status # show current state
+#   ./block-omarchy-updates.sh            # install the guards
+#   ./block-omarchy-updates.sh --undo     # restore the originals
+#   ./block-omarchy-updates.sh --status   # show current state
+#   ./block-omarchy-updates.sh --dry-run  # print what would happen, change nothing
+#
+# --dry-run works with --undo too, so the reversal can be previewed before it is
+# trusted. Combine them:  ./block-omarchy-updates.sh --undo --dry-run
 
 set -euo pipefail
 
+DRYRUN=0
 MARKER="OMARCHY-BLOCKED-GUARD"
 VAULT=/usr/local/share/omarchy-blocked
 PACCONF=/etc/pacman.conf
@@ -55,12 +60,27 @@ status() {
     | sed 's/^/    /' || echo "    (none)"
 }
 
-case "${1:-}" in
-  --status) status; exit 0 ;;
-esac
+for a in "$@"; do
+  case "$a" in
+    --status) status; exit 0 ;;
+    --dry-run) DRYRUN=1 ;;
+    --undo) : ;;   # handled below
+    -h|--help) sed -n '4,16p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) die "unknown option: $a" "Valid: --undo, --status, --dry-run" ;;
+  esac
+done
 
-(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
-sudo -v || die "sudo required" "Nothing has been changed." "To inspect the current state without sudo:  $0 --status"
+# Every mutation goes through this, so --dry-run is honest by construction rather
+# than by remembering to guard each call site.
+do_() {
+  if (( DRYRUN )); then printf '   [dry-run] %s\n' "$(printf '%q ' "$@")"; return 0; fi
+  "$@"
+}
+
+if (( ! DRYRUN )) && (( EUID == 0 )); then
+  die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
+fi
+(( DRYRUN )) || sudo -v || die "sudo required" "Nothing has been changed." "To inspect the current state without sudo:  $0 --status"
 
 # ------------------------------------------------------------------- undo
 if [[ ${1:-} == "--undo" ]]; then
@@ -69,25 +89,26 @@ if [[ ${1:-} == "--undo" ]]; then
   for t in $(printf '%s\n' "${TARGETS[@]}" | sort); do
     b="$VAULT/$(echo "${t#/}" | tr / _)"
     if [[ -f $b ]]; then
-      sudo install -m 0755 "$b" "$t"; echo "  restored $t"
+      do_ sudo install -m 0755 "$b" "$t"
+      (( DRYRUN )) && echo "  would restore $t" || echo "  restored $t"
     else
       warn "no backup for $t (reinstall with: sudo pacman -S omarchy)"
     fi
   done
   if [[ -f $VAULT/update-guard.hook ]]; then
     log "Restoring $HOOK"
-    sudo install -m 0644 "$VAULT/update-guard.hook" "$HOOK"
+    do_ sudo install -m 0644 "$VAULT/update-guard.hook" "$HOOK"
   fi
 
   log "Removing the NoExtract entries"
-  sudo sed -i -E '/^NoExtract = usr\/(bin|share\/omarchy\/bin)\/omarchy-(update|refresh-pacman)$/d' "$PACCONF"
-  sudo sed -i '\|^NoExtract = usr/share/libalpm/hooks/00-omarchy-update-guard.hook$|d' "$PACCONF"
+  do_ sudo sed -i -E '/^NoExtract = usr\/(bin|share\/omarchy\/bin)\/omarchy-(update|refresh-pacman)$/d' "$PACCONF"
+  do_ sudo sed -i '\|^NoExtract = usr/share/libalpm/hooks/00-omarchy-update-guard.hook$|d' "$PACCONF"
   log "Done. The commands are live again."
   exit 0
 fi
 
 # ------------------------------------------------------------------ block
-sudo mkdir -p "$VAULT"
+do_ sudo mkdir -p "$VAULT"
 
 log "Backing up the real commands to $VAULT"
 for t in "${TARGETS[@]}"; do
@@ -98,13 +119,14 @@ for t in "${TARGETS[@]}"; do
   else
     # -L dereferences: /usr/share/omarchy/bin/omarchy-* are symlinks into /usr/bin,
     # and `cp -a` would stash a symlink that later resolves to the guard itself.
-    sudo cp -aL "$t" "$b"; echo "  saved $(basename "$t") -> $b"
+    do_ sudo cp -aL "$t" "$b"; echo "  saved $(basename "$t") -> $b"
   fi
 done
 
 # Repair symlinked vault entries left by earlier runs, which would otherwise
 # restore a guard over a guard on --undo.
 for t in "${TARGETS[@]}"; do
+  (( DRYRUN )) && break   # the probes below need sudo; a dry run must not prompt
   b="$VAULT/$(echo "${t#/}" | tr / _)"
   if sudo test -L "$b"; then
     tgt=$(sudo readlink -f "$b" 2>/dev/null || true)
@@ -112,7 +134,7 @@ for t in "${TARGETS[@]}"; do
       src="$VAULT/usr_bin_$(basename "$t")"
       if sudo test -f "$src" && ! sudo grep -q "$MARKER" "$src" 2>/dev/null; then
         warn "vault entry $(basename "$b") was a symlink into the guard - repairing"
-        sudo rm -f "$b"; sudo cp -a "$src" "$b"
+        do_ sudo rm -f "$b"; do_ sudo cp -a "$src" "$b"
       else
         warn "vault entry $(basename "$b") is unusable; reinstall with: sudo pacman -S omarchy"
       fi
@@ -176,14 +198,14 @@ GUARD
 
 for t in "${TARGETS[@]}"; do
   [[ -e $t || $t == /usr/bin/* ]] || continue
-  sudo install -m 0755 "$tmp" "$t"; echo "  guarded $t"
+  do_ sudo install -m 0755 "$tmp" "$t"; echo "  guarded $t"
 done
 rm -f "$tmp"
 
 log "Neutralising the pacman update-guard hook"
 if [[ -f $HOOK ]]; then
-  sudo cp -a "$HOOK" "$VAULT/update-guard.hook"
-  sudo rm -f "$HOOK"
+  do_ sudo cp -a "$HOOK" "$VAULT/update-guard.hook"
+  do_ sudo rm -f "$HOOK"
   echo "  removed $HOOK (stashed in $VAULT)"
   echo "  plain 'sudo pacman -Syu' works again"
 else
@@ -197,7 +219,7 @@ for p in usr/bin/omarchy-update usr/bin/omarchy-refresh-pacman \
   if grep -qxF "NoExtract = $p" "$PACCONF"; then
     echo "  already present: $p"
   else
-    sudo sed -i "/^# --- end omarchy-on-cachyos guards ---$/i NoExtract = $p" "$PACCONF"
+    do_ sudo sed -i "/^# --- end omarchy-on-cachyos guards ---$/i NoExtract = $p" "$PACCONF"
     echo "  added: $p"
   fi
 done
