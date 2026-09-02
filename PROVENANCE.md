@@ -161,13 +161,16 @@ is sensitive alone, and together they describe a single computer.
 
 So incidental specifics were generalised wherever they were not load-bearing:
 
-| Was | Now | Why |
+| Detail | Replaced with | Why |
 | --- | --- | --- |
-| "a disabled output" | "a disabled output" | The form factor is irrelevant to the bug |
-| An exact resolution and scale factor | The scaling rule, plus a command to read your own | The rule is what transfers; the numbers were one machine's |
-| A reclaimed byte count and ESP size | "a small ESP adds up quickly" | Storage sizes describe hardware |
-| Eight hex characters of two machine-ids | `<active-token>`, `<stale-token>` | A 32-bit prefix of a real identifier is still an identifier |
-| A named greeter and GPU vendors | "a greetd-based greeter", "more than one GPU" | Enough to say what was exercised, not which machine |
+| A named form factor | The neutral term for the component | The form factor was irrelevant to the bug being described |
+| An exact resolution and scale factor | The scaling rule, plus a command to read your own | The rule is what transfers; the numbers described one machine |
+| A reclaimed byte count and a partition size | A qualitative statement | Storage sizes describe hardware |
+| Truncated machine-ids | `<active-token>`, `<stale-token>` | A 32-bit prefix of a real identifier is still an identifier |
+| A named greeter and specific GPU vendors | Their general category | Enough to say what was exercised, not which machine |
+
+Note that this table names *categories* rather than quoting the original strings. Documenting
+a scrub by reprinting what was scrubbed would undo it.
 
 What stays is what the project is *about* — a LUKS root on btrfs with limine and snapper —
 because that is the subject matter, not an incidental detail about the author's hardware.
