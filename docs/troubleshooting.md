@@ -110,6 +110,39 @@ A <width>×<height> display at 2× is a <logical-size> logical desktop. Re-run `
 
 ---
 
+## "no initramfs*.img found under /boot"
+
+There are two initramfs layouts, and only one uses that filename:
+
+| Layout | Path |
+| --- | --- |
+| classic mkinitcpio | `/boot/initramfs-<kernel>.img` |
+| kernel-install (CachyOS + limine, systemd-boot) | `/boot/<machine-id>/<kernel>/initramfs` |
+
+The second has **no extension** and sits a level deeper. Find yours with:
+
+```bash
+sudo find /boot -maxdepth 4 \( -name 'initramfs*.img' -o -name 'initramfs' \) -type f
+```
+
+On such a system `mkinitcpio -P` also reports `No presets found in /etc/mkinitcpio.d` and
+defers to `limine-mkinitcpio`, which is what actually writes the images and updates
+`limine.conf`. Call that directly rather than relying on the prompt:
+
+```bash
+sudo limine-mkinitcpio
+```
+
+Confirm the encryption hook survived — this is the check that matters on a LUKS root:
+
+```bash
+for i in $(sudo find /boot -maxdepth 4 -name initramfs -type f); do
+  sudo lsinitcpio -a "$i" | grep -i '^ *Hooks'
+done
+```
+
+---
+
 ## Verifying you can still boot
 
 ```bash

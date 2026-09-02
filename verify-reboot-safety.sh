@@ -44,7 +44,11 @@ else ok "root is not LUKS - encryption hooks not required"; fi
                                    || warn "sd-btrfs-overlayfs missing - booting a snapshot may fail"
 
 hdr "3. Actual initramfs on disk"
-mapfile -t IMGS < <(sudo find /boot -maxdepth 2 -name 'initramfs*.img' 2>/dev/null | sort)
+# Two layouts in the wild:
+#   classic mkinitcpio : /boot/initramfs-<kernel>.img
+#   kernel-install     : /boot/<machine-id>/<kernel>/initramfs   (CachyOS + limine)
+mapfile -t IMGS < <(sudo find /boot -maxdepth 4 \
+  \( -name 'initramfs*.img' -o -name 'initramfs' -o -name 'initrd' \) -type f 2>/dev/null | sort)
 if ((${#IMGS[@]}==0)); then
   warn "no initramfs*.img found under /boot (UKI setup?); listing /boot:"
   sudo ls -la /boot | sed 's/^/        /'
@@ -100,9 +104,16 @@ if (( REBUILD )); then
   if (( FAIL > 0 )); then
     bad "refusing to rebuild while checks are failing - fix them first"
   else
-    sudo mkinitcpio -P && ok "mkinitcpio -P succeeded" || bad "mkinitcpio -P FAILED - do not reboot"
+    if command -v limine-mkinitcpio >/dev/null && [[ ! -d /etc/mkinitcpio.d || -z $(ls -A /etc/mkinitcpio.d 2>/dev/null) ]]; then
+      echo "        no mkinitcpio presets; this is a limine + kernel-install system"
+      sudo limine-mkinitcpio && ok "limine-mkinitcpio succeeded" || bad "limine-mkinitcpio FAILED - do not reboot"
+    else
+      sudo mkinitcpio -P && ok "mkinitcpio -P succeeded" || bad "mkinitcpio -P FAILED - do not reboot"
+    fi
+    mapfile -t IMGS < <(sudo find /boot -maxdepth 4 \
+      \( -name 'initramfs*.img' -o -name 'initramfs' -o -name 'initrd' \) -type f 2>/dev/null | sort)
     if (( LUKS )) && command -v lsinitcpio >/dev/null; then
-      for img in $(sudo find /boot -maxdepth 2 -name 'initramfs*.img' 2>/dev/null); do
+      for img in "${IMGS[@]}"; do
         sudo lsinitcpio -a "$img" 2>/dev/null | grep -qi 'sd-encrypt' \
           && ok "$(basename "$img"): sd-encrypt present after rebuild" \
           || bad "$(basename "$img"): sd-encrypt MISSING after rebuild - DO NOT REBOOT"

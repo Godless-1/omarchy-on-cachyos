@@ -26,18 +26,18 @@ No part of this was generated unattended. No part of it was committed unread.
 
 ## Division of labour
 
-| | Human | Model |
-|---|---|---|
-| Chose the goal and changed it twice mid-session | ● | |
-| Ran every `sudo` command | ● | |
-| Approved each destructive step | ● | |
-| Decided licence, visibility, and publication | ● | |
-| Authenticated to GitHub | ● | |
-| Read Omarchy's packages and scripts | | ● |
-| Identified the boot hazards | | ● |
-| Wrote the scripts and documentation | | ● |
-| Designed the verification tests | | ● |
-| Reported failures and its own errors | | ● |
+| Task | Done by |
+| --- | --- |
+| Chose the goal, and changed it twice mid-session | Human |
+| Ran every `sudo` command | Human |
+| Approved each destructive step | Human |
+| Decided licence, visibility, and publication | Human |
+| Authenticated to GitHub | Human |
+| Read Omarchy's packages and scripts | Model |
+| Identified the boot hazards | Model |
+| Wrote the scripts and documentation | Model |
+| Designed the verification tests | Model |
+| Reported failures and its own errors | Model |
 
 The model held no credentials at any point. It could not authenticate, could not enter a
 password, and could not run a privileged command — every `sudo` invocation was pasted into a

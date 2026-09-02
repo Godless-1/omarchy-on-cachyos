@@ -5,34 +5,80 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 <div align="center">
 
-<img src="docs/banner.svg" alt="omarchy-on-cachyos" width="100%">
+<img src="docs/banner.svg" width="100%"
+     alt="omarchy-on-cachyos. Hyprland beside Plasma, your bootloader untouched. Shown as a terminal running ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
 
-<br>
+</div>
+
+# omarchy-on-cachyos
 
 **Install [Omarchy](https://omarchy.org) alongside your existing desktop on CachyOS or Arch —
 without letting it near your bootloader, your initramfs, or your repos.**
 
-<br>
+[![Written in Bash](https://img.shields.io/badge/bash-5.x-9ece6a?style=flat-square&logo=gnubash&logoColor=1a1b26&labelColor=24283b)](install-omarchy-on-cachyos.sh)
+[![Targets Omarchy 4.0.2](https://img.shields.io/badge/omarchy-4.0.2-7aa2f7?style=flat-square&labelColor=24283b)](https://omarchy.org)
+[![Base: CachyOS or Arch](https://img.shields.io/badge/base-CachyOS%20%2F%20Arch-bb9af7?style=flat-square&labelColor=24283b)](https://cachyos.org)
+[![Code licensed AGPL-3.0-or-later](https://img.shields.io/badge/code-AGPL--3.0--or--later-f7768e?style=flat-square&labelColor=24283b)](LICENSES/AGPL-3.0-or-later.txt)
+[![Docs licensed CC BY-SA 4.0](https://img.shields.io/badge/docs-CC%20BY--SA%204.0-ff9e64?style=flat-square&labelColor=24283b)](LICENSES/CC-BY-SA-4.0.txt)
+[![Provenance disclosed](https://img.shields.io/badge/provenance-disclosed-9aa5ce?style=flat-square&labelColor=24283b)](PROVENANCE.md)
 
-[![Shell](https://img.shields.io/badge/bash-5.x-9ece6a?style=flat-square&logo=gnubash&logoColor=1a1b26&labelColor=24283b)](#)
-[![Omarchy](https://img.shields.io/badge/omarchy-4.0.2-7aa2f7?style=flat-square&labelColor=24283b)](https://omarchy.org)
-[![Base](https://img.shields.io/badge/base-CachyOS%20%2F%20Arch-bb9af7?style=flat-square&labelColor=24283b)](https://cachyos.org)
-[![Code](https://img.shields.io/badge/code-AGPL--3.0--or--later-f7768e?style=flat-square&labelColor=24283b)](LICENSES/AGPL-3.0-or-later.txt)
-[![Docs](https://img.shields.io/badge/docs-CC%20BY--SA%204.0-ff9e64?style=flat-square&labelColor=24283b)](LICENSES/CC-BY-SA-4.0.txt)
-[![Provenance](https://img.shields.io/badge/provenance-disclosed-565f89?style=flat-square&labelColor=24283b)](PROVENANCE.md)
+---
 
-</div>
+## At a glance
+
+**What it does.** Puts Omarchy 4's Hyprland desktop in your greeter's session list, next to
+the desktop you already use. You pick one at login. No VM, no container, no second disk.
+
+**Why you need this rather than just installing it.** Omarchy's packages assume they own the
+machine. Unguarded, they rewrite your initramfs hooks, your bootloader entries, and your
+package repositories. On a LUKS-encrypted root, that means **root stops unlocking**.
+
+**What this adds.** Guards that survive `pacman -Syu`, a hard gate that aborts mid-install if
+your encryption hook disappeared, and a verifier that proves you can still boot.
+
+| Property | Answer |
+| --- | --- |
+| Time | ~10 minutes plus download |
+| Download | ~750 MB (`--minimal` is much less) |
+| Touches your bootloader | **No** — guarded |
+| Touches your initramfs hooks | **No** — guarded, and verified after |
+| Touches your repositories | Adds one, ordered **last**, so it never overrides yours |
+| Your existing desktop | Untouched. Still there, still default if you want |
+| Reversible | Yes — uninstaller, config backups, and a bootable snapshot |
+| Needs a reboot | No. Log out and back in |
+
+**The whole flow, start to finish:**
+
+```bash
+./install-omarchy-on-cachyos.sh --dry-run   # changes nothing, needs no sudo
+./install-omarchy-on-cachyos.sh             # the real thing
+./block-omarchy-updates.sh                  # fence off two destructive commands
+./verify-reboot-safety.sh                   # prove the machine still boots
+```
+
+Then log out and pick **Omarchy (Hyprland uwsm)**. Prefer not to commit yet? Run
+[`./omarchy-window`](#the-nested-window) and get the whole desktop in a window instead.
+
+> [!CAUTION]
+> On a LUKS-encrypted system, installing Omarchy's packages **unguarded** can leave you unable
+> to unlock your root filesystem. Read [The three hazards](#the-three-hazards) before running
+> anything — including if you decide not to use these scripts.
 
 ---
 
 <div align="center">
 
-<a href="PROVENANCE.md"><img src="docs/provenance.svg" alt="Build provenance: written by Claude Opus 5, directed and executed by a human. Full disclosure in PROVENANCE.md" width="100%"></a>
-
-<sub>Every claim below is reproducible from your own shell — see
-<a href="PROVENANCE.md#auditing-this-yourself">Auditing this yourself</a>.</sub>
+<a href="PROVENANCE.md"><img src="docs/provenance.svg" width="100%"
+  alt="Build provenance. Written by Claude Opus 5, model claude-opus-5, via Claude Code. Directed by a human who set the scope, reviewed the work, and ran every privileged command. Method: research, then dry-run, then verify empirically, then iterate. Claims were tested on real hardware, not asserted. No secrets, hostnames, UUIDs or personal data were published. Full disclosure in PROVENANCE dot md."></a>
 
 </div>
+
+> **Build provenance.** The scripts and documentation here were **written by Claude Opus 5
+> (`claude-opus-5`) in Claude Code**, on 2026-09-01, directed and reviewed throughout by a
+> human operator who ran every privileged command personally. Nothing was generated
+> unattended or committed unread. [**PROVENANCE.md**](PROVENANCE.md) gives the full account,
+> including [the eight mistakes made and corrected](PROVENANCE.md#mistakes-made-and-corrected)
+> along the way, and [how to verify every claim yourself](PROVENANCE.md#auditing-this-yourself).
 
 ---
 
@@ -46,17 +92,12 @@ Exec=uwsm start -g -1 -e -D Hyprland hyprland.desktop
 ```
 
 Which means Omarchy can live in your greeter's session list **next to Plasma**, and you pick
-one at login. No VM, no container, no second disk.
+one at login.
 
 The catch is that those packages assume they own the machine. On an existing Arch/CachyOS
 install they will reconfigure your initramfs, your bootloader, and your package repositories.
 This repo installs Omarchy **with those specific behaviours fenced off**, and gives you a way
 to verify your machine still boots afterwards.
-
-> [!CAUTION]
-> On a LUKS-encrypted system, installing Omarchy's packages unguarded can leave you
-> **unable to unlock your root filesystem**. See [The three hazards](#the-three-hazards).
-> Read that section before running anything.
 
 ---
 
@@ -81,11 +122,11 @@ On a systemd-initramfs system this swaps `sd-encrypt` → `encrypt` and
 `sd-btrfs-overlayfs` → `btrfs-overlayfs`. The busybox `encrypt` hook **does not parse
 `rd.luks.uuid=`**, which is the syntax a systemd initramfs puts on your kernel cmdline.
 
-| | before | after |
-|---|---|---|
-| init | `systemd` | `udev` |
-| LUKS | `sd-encrypt` ✅ | `encrypt` ❌ |
-| snapshots | `sd-btrfs-overlayfs` ✅ | `btrfs-overlayfs` ❌ |
+| Component | Before | After |
+| --- | --- | --- |
+| init system | `systemd` | `udev` |
+| LUKS unlock | `sd-encrypt` — works | `encrypt` — **cannot parse `rd.luks.uuid=`** |
+| Snapshot boot | `sd-btrfs-overlayfs` — works | `btrfs-overlayfs` — **broken** |
 
 Result: root does not unlock, and booting a snapshot breaks. Verified empirically, not
 theorised.
@@ -120,11 +161,11 @@ See [docs/migrations.md](docs/migrations.md).
 ## How it protects you
 
 | Mechanism | Protects against |
-|---|---|
-| `NoExtract` in `pacman.conf` | Hazards 1 & 2, **durably** — survives package updates |
+| --- | --- |
+| `NoExtract` in `pacman.conf` | Hazards 1 and 2, **durably** — survives package updates |
 | Hard gate after install | Aborts with *DO NOT REBOOT* if `sd-encrypt` vanished |
-| Binary guards + `NoExtract` | Hazard 3, from every shell, both sessions, and the Omarchy menu |
-| Snapper snapshot + backups | Rollback if anything else surprises you |
+| Binary guards plus `NoExtract` | Hazard 3, from every shell, both sessions, and the Omarchy menu |
+| Snapper snapshot and backups | Rollback if anything else surprises you |
 
 `NoExtract` is the key idea: pacman never extracts those paths, so the protection **survives
 `pacman -Syu`** instead of being undone by the next update.
@@ -195,19 +236,23 @@ match exactly, and installs a KWin rule so it lands there with no titlebar.
 
 `--bare` skips Omarchy's `systemctl --user import-environment`, which would otherwise
 overwrite `WAYLAND_DISPLAY` in your **host** session — while still starting the Omarchy shell
-so the menu (`SUPER+SPACE`) and bar work.
+so the menu (<kbd>Super</kbd>+<kbd>Space</kbd>) and bar work.
 
-This is the gentlest way to learn Hyprland's keybindings. `SUPER+K` opens Omarchy's own
-cheatsheet. `SUPER+ESCAPE` exits.
+This is the gentlest way to learn Hyprland's keybindings.
 
-<div align="center"><br><code>SUPER+SPACE</code> menu · <code>SUPER+K</code> keybindings · <code>SUPER+Q</code> terminal · <code>SUPER+ESCAPE</code> exit<br><br></div>
+| Key | Does |
+| --- | --- |
+| <kbd>Super</kbd>+<kbd>Space</kbd> | Omarchy menu |
+| <kbd>Super</kbd>+<kbd>K</kbd> | Omarchy's own keybinding cheatsheet |
+| <kbd>Super</kbd>+<kbd>Q</kbd> | Terminal |
+| <kbd>Super</kbd>+<kbd>Escape</kbd> | Exit the nested session |
 
 ---
 
 ## Scripts
 
 | Script | Purpose |
-|---|---|
+| --- | --- |
 | [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
 | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse it. `--keep-apps` |
 | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
@@ -233,9 +278,17 @@ Arch or an Arch derivative with a working desktop session, `pacman`, `curl`, `bs
 exact work-area fitting is KDE-specific (`kscreen-doctor`, KWin scripting) and degrades
 gracefully elsewhere.
 
-Developed against **Omarchy 4.0.2** on **CachyOS** with LUKS root on btrfs, limine + snapper,
-a greetd-based greeter, and more than one GPU. Other bases should work; the guards are
-written defensively and the verifier will tell you the truth either way.
+Developed against **Omarchy 4.0.2** on **CachyOS** with LUKS root on btrfs, limine and
+snapper, a greetd-based greeter, and more than one GPU. Other bases should work; the guards
+are written defensively and the verifier will tell you the truth either way.
+
+## Accessibility
+
+Both banners are decorative restatements — every fact they carry also appears as ordinary
+text nearby, and each has descriptive `alt` text rather than a filename. Colours meet WCAG
+2.1 AA contrast against their backgrounds (measured, not eyeballed), no information is
+conveyed by colour alone, tables have real headers, and there are no placeholder links.
+If you hit something that reads badly in a screen reader, that is a bug — please open an issue.
 
 ---
 
