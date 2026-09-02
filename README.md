@@ -311,6 +311,15 @@ so it scripts as well as it menus.
 An already-open shell caches command lookups: `hash -r` in bash, `rehash` in zsh. fish picks
 them up on its own.
 
+## Release names
+
+Every release carries a codename: the Pokémon whose National Pokédex number is the version
+with the dots removed. **1.4.3 → #143 → Snorlax** — the one that lies in the road and will
+not move until something wakes it, which is precisely what that release fixed.
+
+The number picks the candidate; the release still has to earn it. When the vibe does not
+fit, the notes say so rather than pretending.
+
 ## Documentation
 
 *Longer form, one topic each.*
