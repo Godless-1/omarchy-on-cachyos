@@ -1,0 +1,87 @@
+# SPDX-FileCopyrightText: 2026 Godless-1
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install shellcheck
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      - name: Lint every script
+        run: |
+          shopt -s nullglob
+          files=(*.sh omarchy-window omarchy-on-cachyos test/*.sh)
+          printf 'checking: %s\n' "${files[@]}"
+          shellcheck -s bash "${files[@]}"
+
+  syntax:
+    name: bash -n
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          shopt -s nullglob
+          for f in *.sh omarchy-window omarchy-on-cachyos test/*.sh; do
+            bash -n "$f" && echo "ok  $f"
+          done
+
+  diagnostics:
+    name: fault-injection tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the diagnostic test suite
+        run: ./test/test-diagnose.sh
+
+  package:
+    name: makepkg + namcap
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare a build user (makepkg refuses to run as root)
+        run: |
+          pacman -Syu --noconfirm --needed git namcap
+          useradd -m build
+          chown -R build:build .
+      - name: Validate .SRCINFO is in sync with PKGBUILD
+        run: |
+          su build -c 'makepkg --printsrcinfo > /tmp/.SRCINFO.gen'
+          diff -u .SRCINFO /tmp/.SRCINFO.gen \
+            || { echo "::error::.SRCINFO is stale - run: makepkg --printsrcinfo > .SRCINFO"; exit 1; }
+      - name: Lint the PKGBUILD
+        run: namcap PKGBUILD
+      - name: Build the package
+        run: su build -c 'makepkg -f --noconfirm --nodeps'
+      - name: Confirm every command landed on PATH
+        run: |
+          pkg=$(ls omarchy-on-cachyos-*.pkg.tar.* | head -1)
+          echo "built: $pkg"
+          list=$(bsdtar -tf "$pkg")
+          for c in omarchy-on-cachyos omarchy-window omarchy-oc-install \
+                   omarchy-oc-uninstall omarchy-oc-block-updates \
+                   omarchy-oc-verify-boot omarchy-oc-preserve-identity \
+                   omarchy-oc-clean-boot; do
+            grep -qx "usr/bin/$c" <<<"$list" && echo "ok  usr/bin/$c" \
+              || { echo "::error::missing usr/bin/$c"; exit 1; }
+          done
+          grep -q 'usr/share/applications/omarchy-on-cachyos.desktop' <<<"$list" \
+            || { echo "::error::desktop entry missing from package"; exit 1; }
+          grep -q 'usr/share/icons/hicolor/scalable/apps/omarchy-on-cachyos.svg' <<<"$list" \
+            || { echo "::error::icon missing from package"; exit 1; }
+
+  reuse:
+    name: licensing metadata
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run reuse lint

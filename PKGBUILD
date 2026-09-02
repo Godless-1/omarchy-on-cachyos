@@ -3,7 +3,7 @@
 # Maintainer: Godless-1 <19769978+Godless-1@users.noreply.github.com>
 
 pkgname=omarchy-on-cachyos
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
@@ -23,7 +23,7 @@ optdepends=(
 )
 install=omarchy-on-cachyos.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('6bb09bf0ee0d9168af5d620c1e9fb70c75df3dedc8a64dc07cb40a28cec8f54f')
+sha256sums=('SKIP')  # replaced below once the tag exists
 
 # Scripts keep their repository names in /usr/lib, and get short, prefixed
 # commands on PATH. Renaming them in place would break every reference in the
@@ -59,12 +59,30 @@ package() {
     ln -sf "$_libdir/$target" "$pkgdir/usr/bin/$cmd"
   done
 
+  install -Dm644 docs/icons/omarchy-on-cachyos.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/omarchy-on-cachyos.svg"
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/omarchy-on-cachyos.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Omarchy on CachyOS
+GenericName=Omarchy setup and health checks
+Comment=Install, guard, verify and repair an Omarchy install alongside your desktop
+Exec=omarchy-on-cachyos
+Icon=omarchy-on-cachyos
+Terminal=true
+Categories=System;Settings;PackageManager;
+Keywords=omarchy;hyprland;pacman;boot;initramfs;
+StartupNotify=false
+DESKTOP
+
   install -Dm644 README.md      "$pkgdir/usr/share/doc/$pkgname/README.md"
   install -Dm644 PROVENANCE.md  "$pkgdir/usr/share/doc/$pkgname/PROVENANCE.md"
   install -Dm644 LICENSING.md   "$pkgdir/usr/share/doc/$pkgname/LICENSING.md"
   for d in docs/*.md; do
     install -Dm644 "$d" "$pkgdir/usr/share/doc/$pkgname/$d"
   done
+
+  install -Dm755 test/test-diagnose.sh "$pkgdir$_libdir/test/test-diagnose.sh"
 
   install -Dm644 LICENSES/AGPL-3.0-or-later.txt \
     "$pkgdir/usr/share/licenses/$pkgname/AGPL-3.0-or-later.txt"
