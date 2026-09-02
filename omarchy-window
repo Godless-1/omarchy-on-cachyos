@@ -189,9 +189,62 @@ if (( GRAB_KEYS )); then
   fi
 fi
 
+# --- keep what Omarchy launches inside this window -------------------------
+# Omarchy starts apps with `uwsm-app`, which does not run them: it hands the
+# command to wayland-wm-app-daemon.service. That is a systemd *user* unit, so it
+# carries the environment of whichever session last imported one - on a Plasma
+# host, Plasma's. Probed here it hands every app WAYLAND_DISPLAY=wayland-0,
+# XDG_CURRENT_DESKTOP=KDE and no HYPRLAND_INSTANCE_SIGNATURE, whoever called it.
+#
+# So the agent keybinding, the terminal, the file manager - everything Omarchy
+# launches from inside this window - opens on the host desktop instead, detached
+# from the compositor that asked for it. uwsm-app has no bypass flag, so the
+# nested session gets a uwsm-app of its own, earlier on PATH, that runs the
+# command directly and lets it inherit this compositor.
+#
+# Every one of Omarchy's 31 call sites uses the same `uwsm-app -- <command>`
+# form, so that is all the shim has to understand. `uwsm app --` (the separate
+# binary, used only by omarchy-windows-vm) is not shimmed and still goes to the
+# host.
+SHIMDIR=$(mktemp -d "${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-shim.XXXXXX")
+REAL_UWSM=$(command -v uwsm-app 2>/dev/null || echo /usr/bin/uwsm-app)
+cat > "$SHIMDIR/uwsm-app" <<'SHIM'
+#!/bin/sh
+# Installed by omarchy-window for one nested session. Not a system file.
+case "${1:-}" in ping | stop) exit 0 ;; esac
+
+# Every Omarchy call site spells it `uwsm-app -- <command>`, so take what
+# follows the first standalone "--" and run it right here, inheriting this
+# compositor instead of the host's.
+for a in "$@"; do
+  [ "$a" = "--" ] || continue
+  while [ "$#" -gt 0 ]; do
+    [ "$1" = "--" ] && { shift; break; }
+    shift
+  done
+  [ "$#" -gt 0 ] || exit 0
+  exec "$@"
+done
+
+# No "--" to anchor on. Options that take a separate value (-s SLICE, -a NAME)
+# would make a guess here exec the value as a command, so hand the whole thing
+# to the real uwsm-app rather than invent a parse for a form Omarchy never uses.
+exec @REAL_UWSM@ "$@"
+SHIM
+sed -i "s|@REAL_UWSM@|$REAL_UWSM|" "$SHIMDIR/uwsm-app"
+chmod +x "$SHIMDIR/uwsm-app"
+
+# One handler, armed before anything that can exit early. A second
+# `trap ... EXIT` silently replaces the first, which is how the temporary config
+# directory used to leak on every run.
+cleanup() {
+  unblock_shortcuts
+  rm -rf "$SHIMDIR" ${CFG:+"$(dirname "$CFG")"}
+}
+trap cleanup EXIT INT TERM
+
 # --- generate the nested config -------------------------------------------
 CFG="$(mktemp -d)/nested.lua"
-trap 'rm -rf "$(dirname "$CFG")"' EXIT
 {
   echo 'dofile((os.getenv("OMARCHY_PATH") or "/usr/share/omarchy") .. "/default/hypr/bootstrap.lua")'
   if [[ $MODE == bare ]]; then
@@ -207,6 +260,12 @@ trap 'rm -rf "$(dirname "$CFG")"' EXIT
     echo 'hl.on("hyprland.start", function() hl.exec_cmd("omarchy-launch-shell") end)'
   fi
   echo 'hl.env("GDK_SCALE", "1")'
+  # Hyprland's children inherit this, so the shim covers the terminal you open
+  # by hand as well as anything the bindings launch. Escaped for Lua, not shell.
+  lua_path="$SHIMDIR:$PATH"
+  lua_path=${lua_path//\\/\\\\}
+  lua_path=${lua_path//\"/\\\"}
+  echo "hl.env(\"PATH\", \"$lua_path\")"
   echo "hl.monitor({ output = \"\", mode = \"${SIZE}@60\", position = \"0x0\", scale = 1 })"
   echo 'pcall(require, "default.hypr.toggles")'
 } > "$CFG"
@@ -240,14 +299,18 @@ if (( DETACH )); then
   keep="${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-$$.lua"
   cp "$CFG" "$keep"
   # The cleanup must follow Hyprland, not this shell, or Plasma never gets its
-  # Meta+ keys back after the window closes.
+  # Meta+ keys back after the window closes. The shim has to outlive this shell
+  # too - the nested session resolves it on every launch, not just at startup.
   setsid bash -c "Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null
     '$SHORTCUTS' restore >/dev/null 2>&1
-    rm -f '$keep'" >/dev/null 2>&1 &
+    rm -f '$keep'
+    rm -rf '$SHIMDIR'" >/dev/null 2>&1 &
   echo "Started in the background (pid $!)."
+  # The background session owns the shim and the config now, so this shell must
+  # not take them away on the way out.
+  trap - EXIT INT TERM
   exit 0
 fi
 
-trap unblock_shortcuts EXIT INT TERM
 Hyprland -c "$CFG"
-unblock_shortcuts
+cleanup

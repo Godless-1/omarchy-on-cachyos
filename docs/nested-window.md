@@ -94,6 +94,40 @@ exec omarchy-shell shell toggle omarchy.menu "$(menu_payload "$route")"
 — so without `omarchy-launch-shell` running, `SUPER+SPACE` has no backend and silently does
 nothing. The binding itself is fine.
 
+## Where launched apps end up
+
+Omarchy does not start apps directly. Every launcher — the agent keybinding, the
+terminal, the file manager, 31 call sites in all — goes through `uwsm-app`, which
+hands the command to `wayland-wm-app-daemon.service`.
+
+That is a systemd **user** unit. It carries the environment of whichever session
+last imported one, which on a Plasma host is Plasma's. Probing it on this machine,
+from a shell that had every nested variable set:
+
+```console
+$ uwsm-app -- sh -c 'echo "$WAYLAND_DISPLAY $XDG_CURRENT_DESKTOP ${HYPRLAND_INSTANCE_SIGNATURE:-none}"'
+wayland-0 KDE none
+```
+
+`wayland-0` is Plasma. So anything Omarchy launches from inside the nested window
+opens **on the host desktop**, detached from the compositor that asked for it —
+which looks exactly like the launcher being broken, because nothing appears where
+you are looking.
+
+`uwsm-app` has no bypass flag, so `omarchy-window` writes a `uwsm-app` of its own
+into a temporary directory and puts it first on the nested session's `PATH`. It
+runs the command in place, so it inherits the nested compositor. Hyprland's
+children inherit that `PATH`, so it covers a terminal you open by hand as well as
+anything the bindings start.
+
+The shim only models `uwsm-app -- <command>`, which is the form all 31 call sites
+use. Anything else — options that take a separate value, where guessing would
+`exec` the *value* as a command — is handed to the real `uwsm-app` rather than
+parsed on a guess. `uwsm app --` (the separate binary, used only by
+`omarchy-windows-vm`) is not shimmed and still goes to the host.
+[`test/test-uwsm-shim.sh`](../test/test-uwsm-shim.sh) extracts the shim from
+`omarchy-window` itself and exercises every one of those cases.
+
 ## The keyboard
 
 KWin claims every <kbd>Meta</kbd> combination it holds a global shortcut for *before* the

@@ -49,6 +49,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Run the diagnostic test suite
         run: ./test/test-diagnose.sh
+      - name: Run the uwsm-app shim test suite
+        run: ./test/test-uwsm-shim.sh
 
   package:
     name: makepkg + namcap

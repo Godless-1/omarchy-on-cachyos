@@ -3,7 +3,7 @@
 # Maintainer: Godless-1 <19769978+Godless-1@users.noreply.github.com>
 
 pkgname=omarchy-on-cachyos
-pkgver=1.2.0
+pkgver=1.3.0
 pkgrel=1
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
@@ -86,7 +86,9 @@ DESKTOP
     install -Dm644 "$d" "$pkgdir/usr/share/doc/$pkgname/$d"
   done
 
-  install -Dm755 test/test-diagnose.sh "$pkgdir$_libdir/test/test-diagnose.sh"
+  for t in test/*.sh; do
+    install -Dm755 "$t" "$pkgdir$_libdir/$t"
+  done
 
   install -Dm644 LICENSES/AGPL-3.0-or-later.txt \
     "$pkgdir/usr/share/licenses/$pkgname/AGPL-3.0-or-later.txt"
