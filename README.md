@@ -40,7 +40,8 @@ run it — in a window, or as a login session — plus a script that proves your
 ```bash
 git clone https://github.com/Godless-1/omarchy-on-cachyos.git
 cd omarchy-on-cachyos
-./omarchy-on-cachyos
+makepkg -si          # optional: puts the commands on your PATH
+omarchy-on-cachyos   # or ./omarchy-on-cachyos without installing
 ```
 
 That opens a menu showing what is and isn't set up on your system, and runs everything from
@@ -232,20 +233,26 @@ where you are.
 
 ---
 
-## Scripts
+## Commands
 
 *Each runs on its own; the menu is only a front end.*
 
-| Script | Purpose |
-| --- | --- |
-| [`omarchy-on-cachyos`](omarchy-on-cachyos) | **Menu fronting everything below.** `status` prints state and exits |
-| [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
-| [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse it. `--keep-apps` |
-| [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
-| [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
-| [`omarchy-window`](omarchy-window) | Omarchy in a window. `--bare`, `-s WxH`, `--no-rule` |
-| [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<machine-id>/` dirs. `--archive`, `--delete` |
-| [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme and fastfetch. `--apply`, `--undo` |
+Installed with `makepkg -si`, everything is on `PATH` under a short name. Run from a checkout
+instead and the file names in the second column are what you call.
+
+| Command | Script | Purpose |
+| --- | --- | --- |
+| `omarchy-on-cachyos` | [`omarchy-on-cachyos`](omarchy-on-cachyos) | **Menu fronting everything below.** `status` prints state and exits |
+| `omarchy-window` | [`omarchy-window`](omarchy-window) | Omarchy in a window. `--bare`, `-s WxH`, `--detach`, `--install-desktop` |
+| `omarchy-oc-install` | [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
+| `omarchy-oc-block-updates` | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
+| `omarchy-oc-preserve-identity` | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme and fastfetch. `--apply`, `--undo` |
+| `omarchy-oc-verify-boot` | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
+| `omarchy-oc-clean-boot` | [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<token>/` dirs. `--archive`, `--delete` |
+| `omarchy-oc-uninstall` | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse the install. `--keep-apps` |
+
+An already-open shell caches command lookups: `hash -r` in bash, `rehash` in zsh. fish picks
+them up on its own.
 
 ## Documentation
 

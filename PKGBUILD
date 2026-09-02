@@ -20,21 +20,24 @@ optdepends=(
 )
 install=omarchy-on-cachyos.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')
+sha256sums=('6bb09bf0ee0d9168af5d620c1e9fb70c75df3dedc8a64dc07cb40a28cec8f54f')
 
 # Scripts keep their repository names in /usr/lib, and get short, prefixed
 # commands on PATH. Renaming them in place would break every reference in the
 # documentation, and bare names like `install-...sh` do not belong in /usr/bin.
+# A plain indexed array of "command:target" pairs. An associative array does not
+# survive makepkg re-sourcing the PKGBUILD inside fakeroot, and the symlinks are
+# silently skipped - the build still succeeds, with an empty /usr/bin.
 _libdir=/usr/lib/$pkgname
-declare -A _cmds=(
-  [omarchy-on-cachyos]=omarchy-on-cachyos
-  [omarchy-window]=omarchy-window
-  [omarchy-oc-install]=install-omarchy-on-cachyos.sh
-  [omarchy-oc-uninstall]=uninstall-omarchy-on-cachyos.sh
-  [omarchy-oc-block-updates]=block-omarchy-updates.sh
-  [omarchy-oc-verify-boot]=verify-reboot-safety.sh
-  [omarchy-oc-preserve-identity]=preserve-cachyos-identity.sh
-  [omarchy-oc-clean-boot]=clean-stale-boot-entries.sh
+_cmds=(
+  'omarchy-on-cachyos:omarchy-on-cachyos'
+  'omarchy-window:omarchy-window'
+  'omarchy-oc-install:install-omarchy-on-cachyos.sh'
+  'omarchy-oc-uninstall:uninstall-omarchy-on-cachyos.sh'
+  'omarchy-oc-block-updates:block-omarchy-updates.sh'
+  'omarchy-oc-verify-boot:verify-reboot-safety.sh'
+  'omarchy-oc-preserve-identity:preserve-cachyos-identity.sh'
+  'omarchy-oc-clean-boot:clean-stale-boot-entries.sh'
 )
 
 package() {
@@ -46,8 +49,11 @@ package() {
   done
 
   install -dm755 "$pkgdir/usr/bin"
-  for cmd in "${!_cmds[@]}"; do
-    ln -sf "$_libdir/${_cmds[$cmd]}" "$pkgdir/usr/bin/$cmd"
+  local pair cmd target
+  for pair in "${_cmds[@]}"; do
+    cmd=${pair%%:*}; target=${pair#*:}
+    [[ -f $pkgdir$_libdir/$target ]] || { echo "missing $target" >&2; return 1; }
+    ln -sf "$_libdir/$target" "$pkgdir/usr/bin/$cmd"
   done
 
   install -Dm644 README.md      "$pkgdir/usr/share/doc/$pkgname/README.md"
