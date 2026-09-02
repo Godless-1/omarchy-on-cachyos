@@ -18,6 +18,6 @@ pkgbase = omarchy-on-cachyos
 	optdepends = snapper: pre-install snapshots
 	optdepends = mkinitcpio: initramfs inspection in omarchy-verify-boot
 	source = omarchy-on-cachyos-1.3.0.tar.gz::https://github.com/Godless-1/omarchy-on-cachyos/archive/refs/tags/v1.3.0.tar.gz
-	sha256sums = 19341cd387c0cc66dbb10ecd9e20e0605c8fc6b9bdc645afa1370f993303438f
+	sha256sums = 84edc13409b51312a6a8aef0b738f4b4cdb554a579a01224d7d747148f7a1528
 
 pkgname = omarchy-on-cachyos
