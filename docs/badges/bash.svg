@@ -1,0 +1,17 @@
+<!--
+SPDX-FileCopyrightText: 2026 Godless-1
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="79" height="22" viewBox="0 0 79 22" role="img" aria-label="Written in Bash 5.x">
+  <title>Written in Bash 5.x</title>
+  <clipPath id="c"><rect width="79" height="22" rx="4"/></clipPath>
+  <g clip-path="url(#c)">
+    <rect width="43" height="22" fill="#16161e"/>
+    <rect x="43" width="36" height="22" fill="#24283b"/>
+  </g>
+  <rect x="0.5" y="0.5" width="78" height="21" rx="3.5" fill="none" stroke="#3b4261"/>
+  <g font-family="JetBrains Mono, DejaVu Sans Mono, Menlo, monospace" font-size="11">
+    <text x="21.5" y="15.0" fill="#9aa5ce" text-anchor="middle">bash</text>
+    <text x="61.0" y="15.0" fill="#9ece6a" text-anchor="middle">5.x</text>
+  </g>
+</svg>

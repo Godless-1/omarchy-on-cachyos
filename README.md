@@ -15,12 +15,12 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 **Install [Omarchy](https://omarchy.org) alongside your existing desktop on CachyOS or Arch —
 without letting it near your bootloader, your initramfs, or your repos.**
 
-[![Written in Bash](https://img.shields.io/badge/bash-5.x-9ece6a?style=flat-square&logo=gnubash&logoColor=1a1b26&labelColor=24283b)](install-omarchy-on-cachyos.sh)
-[![Targets Omarchy 4.0.2](https://img.shields.io/badge/omarchy-4.0.2-7aa2f7?style=flat-square&labelColor=24283b)](https://omarchy.org)
-[![Base: CachyOS or Arch](https://img.shields.io/badge/base-CachyOS%20%2F%20Arch-bb9af7?style=flat-square&labelColor=24283b)](https://cachyos.org)
-[![Code licensed AGPL-3.0-or-later](https://img.shields.io/badge/code-AGPL--3.0--or--later-f7768e?style=flat-square&labelColor=24283b)](LICENSES/AGPL-3.0-or-later.txt)
-[![Docs licensed CC BY-SA 4.0](https://img.shields.io/badge/docs-CC%20BY--SA%204.0-ff9e64?style=flat-square&labelColor=24283b)](LICENSES/CC-BY-SA-4.0.txt)
-[![Provenance disclosed](https://img.shields.io/badge/provenance-disclosed-9aa5ce?style=flat-square&labelColor=24283b)](PROVENANCE.md)
+<a href="install-omarchy-on-cachyos.sh"><img src="docs/badges/bash.svg" alt="Written in Bash 5.x"></a>
+<a href="https://omarchy.org"><img src="docs/badges/omarchy.svg" alt="Targets Omarchy 4.0.2"></a>
+<a href="https://cachyos.org"><img src="docs/badges/base.svg" alt="Base: CachyOS or Arch"></a>
+<a href="LICENSES/AGPL-3.0-or-later.txt"><img src="docs/badges/code.svg" alt="Code licensed AGPL-3.0-or-later"></a>
+<a href="LICENSES/CC-BY-SA-4.0.txt"><img src="docs/badges/docs.svg" alt="Documentation licensed CC BY-SA 4.0"></a>
+<a href="PROVENANCE.md"><img src="docs/badges/provenance.svg" alt="Build provenance disclosed"></a>
 
 ---
 
@@ -294,6 +294,13 @@ Colour contrast was **measured, not eyeballed** — every foreground meets WCAG 
 its background. Two colours from the original palette failed (2.9:1 and 2.0:1) and were
 replaced. No meaning is carried by colour alone, tables have real headers, and no link points
 at a placeholder.
+
+**Badges.** The badges are hand-made SVGs in this repository, not shields.io images. Shields.io
+hardcodes white text (`fill="#fff"`) on both halves of a badge, and the Tokyo Night accents are
+light tones meant for dark backgrounds — white on `#9ece6a` measures **1.83:1**, which is close
+to invisible. Inverting the relationship (accent text on a dark plate) puts every badge between
+**5.5:1 and 9.0:1**. It also means the header makes no external requests, so nothing about who
+reads this page is sent to a third party.
 
 **Theming.** The banners are deliberately dark in both GitHub themes rather than swapping with
 `prefers-color-scheme`. That is a considered choice, not an oversight: a theme-swapped light
