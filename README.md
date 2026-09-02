@@ -30,7 +30,7 @@ both — without letting Omarchy near your bootloader, your initramfs, or your r
 **What it does.** Installs Omarchy 4 and gives you two ways to run it. You get both from a
 single install; neither is a fallback for the other.
 
-| | |
+| Mode | What you get |
 | --- | --- |
 | **As a login session** | Omarchy appears in your greeter next to the desktop you already use. Log out, pick it, and you are in the real thing, full-screen, on your hardware. Set up automatically — there is nothing to enable. |
 | **In a window** | The same desktop — bar, launcher, keybindings, theming — running in an ordinary window on your current session, sized to your screen minus your panels. Same machine, same filesystem, so there is no VM, no container, and nothing to share. Your files are already there. |
