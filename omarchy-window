@@ -33,8 +33,19 @@ done
 
 if (( INSTALL_DESKTOP )); then
   self=$(readlink -f "$0")
-  icon=/usr/share/omarchy/logo.svg
-  [[ -f $icon ]] || icon=/usr/share/omarchy/icon.png
+  # icon.png is 300x300. logo.svg is a 1215x285 wordmark - a panel slot is square,
+  # so the wordmark scales down into what looks like a horizontal line.
+  src=/usr/share/omarchy/icon.png
+  [[ -f $src ]] || src=/usr/share/omarchy/logo.svg
+  # Install into the icon theme and reference it by name, so the panel, the task
+  # manager and the launcher all resolve it and it survives cache regeneration.
+  icon=omarchy-window
+  icondir="$HOME/.local/share/icons/hicolor/256x256/apps"
+  if mkdir -p "$icondir" && cp -f "$src" "$icondir/$icon.${src##*.}" 2>/dev/null; then
+    gtk-update-icon-cache -qtf "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+  else
+    icon="$src"   # fall back to an absolute path
+  fi
   dir="$HOME/.local/share/applications"; mkdir -p "$dir"
   cat > "$dir/omarchy-window.desktop" <<EOF
 [Desktop Entry]
@@ -50,7 +61,7 @@ StartupWMClass=aquamarine
 EOF
   update-desktop-database "$dir" 2>/dev/null || true
   echo "Installed $dir/omarchy-window.desktop"
-  echo "  icon:  $icon"
+  echo "  icon:  $icon  (from $src)"
   echo "  Launch it from your application menu - no terminal, and the panel entry"
   echo "  now shows the Omarchy logo instead of a generic placeholder."
   exit 0
