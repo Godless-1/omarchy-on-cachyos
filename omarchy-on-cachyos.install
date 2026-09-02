@@ -4,8 +4,10 @@ post_install() {
   cat <<'MSG'
   omarchy-on-cachyos is on your PATH. Start with:
 
-      omarchy-on-cachyos          menu, with a status panel
-      omarchy-on-cachyos status   print state and exit
+      ooc                         menu, with a status panel
+      ooc status                  print state and exit
+
+  `ooc` is the short name for `omarchy-on-cachyos`; either works everywhere.
 
   Other commands: omarchy-window, omarchy-window-shortcuts, omarchy-oc-install,
   omarchy-oc-block-updates, omarchy-oc-verify-boot, omarchy-oc-preserve-identity,

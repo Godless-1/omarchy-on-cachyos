@@ -12,6 +12,8 @@
 #   ./preserve-cachyos-identity.sh                 # report only
 #   ./preserve-cachyos-identity.sh --apply         # restore + install the hook
 #   ./preserve-cachyos-identity.sh --undo          # remove the hook, keep Omarchy's
+#   ./preserve-cachyos-identity.sh --branding      # only re-do the Omarchy session's
+#                                                  # About and screensaver art (no sudo)
 #
 #   PLYMOUTH_THEME=cachyos-bootanimation ./preserve-cachyos-identity.sh --apply
 
@@ -27,7 +29,7 @@ PACCONF=/etc/pacman.conf
 FASTFETCH=etc/fastfetch/config.jsonc
 
 for a in "$@"; do case "$a" in
-  --apply) MODE=apply ;; --undo) MODE=undo ;;
+  --apply) MODE=apply ;; --undo) MODE=undo ;; --branding) MODE=branding ;;
   -h|--help) sed -n '4,17p' "$0" | sed 's/^# \?//'; exit 0 ;;
   *) echo "unknown option: $a" >&2; exit 1 ;;
 esac; done
@@ -53,7 +55,117 @@ printf '      plymouth     : %s\n' "$(plymouth-set-default-theme 2>/dev/null || 
 printf '      fastfetch cfg: %s\n' "$(pacman -Qoq /etc/fastfetch/config.jsonc 2>/dev/null || echo 'unowned/absent')"
 printf '      identity hook: %s\n' "$(test -f "$HOOK" && echo installed || echo 'not installed')"
 
+# --- 5. the session's own branding -----------------------------------------
+# The system files above are what `fastfetch` and the boot splash read. Inside
+# Omarchy there is a second, separate set: its About window and its screensaver
+# read ASCII art from ~/.config/omarchy/branding, which still says Omarchy no
+# matter what /etc/os-release says. These are per-user files, so no sudo, and
+# Omarchy itself treats them as user content (`omarchy branding about ...`).
+#
+# Nothing here is destructive: Omarchy's originals are copied aside first and
+# --undo puts them back byte for byte. A copy of what we generated is kept too,
+# so drift can be detected after an update rewrites the live files.
+BRAND_DIR="$HOME/.config/omarchy/branding"
+BRAND_STATE="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/branding"
+
+brand_source() { # the distribution's own logo, whatever distribution this is
+  local id logo f
+  # shellcheck source=/dev/null
+  id=$(. /etc/os-release 2>/dev/null; echo "${ID:-}")
+  # shellcheck source=/dev/null
+  logo=$(. /etc/os-release 2>/dev/null; echo "${LOGO:-}")
+  for f in "/usr/share/icons/$id.svg" "/usr/share/icons/$logo.svg" \
+           "/usr/share/pixmaps/$id.svg" "/usr/share/pixmaps/$id.png" \
+           "/usr/share/pixmaps/$logo.png"; do
+    [[ -f $f ]] && { echo "$f"; return 0; }
+  done
+  return 1
+}
+
+# shellcheck source=/dev/null
+# PRETTY_NAME first: it is the short form ("CachyOS"), and a wordmark squeezed
+# into 80 columns has no room for NAME's "CachyOS Linux".
+brand_name() { . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-${NAME:-Linux}}"; }
+
+apply_session_branding() {
+  local src name tmp
+  [[ -d $BRAND_DIR ]] || { echo "      no $BRAND_DIR - Omarchy's session files are not here; skipped"; return 0; }
+  command -v omarchy-transcode-ascii >/dev/null || {
+    echo "      omarchy-transcode-ascii not found; skipped"; return 0; }
+  src=$(brand_source) || { echo "      no logo image for this distribution; skipped"; return 0; }
+  name=$(brand_name)
+
+  mkdir -p "$BRAND_STATE/original" "$BRAND_STATE/applied"
+  # Only capture the originals once, or a second run would record our own art
+  # as the thing to restore and --undo would become a no-op.
+  local f
+  for f in about.txt screensaver.txt; do
+    [[ -f $BRAND_DIR/$f && ! -f $BRAND_STATE/original/$f ]] && cp -a "$BRAND_DIR/$f" "$BRAND_STATE/original/$f"
+  done
+
+  tmp=$(mktemp -d); trap 'rm -rf "$tmp"' RETURN
+  # About: the logo mark, at the size Omarchy's own `branding about image` uses.
+  if omarchy-transcode-ascii "$src" "$tmp/about.txt" --width 54 --height 26 >/dev/null 2>&1 \
+     && [[ -s $tmp/about.txt ]]; then
+    install -m644 "$tmp/about.txt" "$BRAND_DIR/about.txt"
+    install -m644 "$tmp/about.txt" "$BRAND_STATE/applied/about.txt"
+    echo "      about.txt      <- $src"
+  else
+    echo "      about.txt      transcode failed; left as it was"
+  fi
+
+  # Screensaver: Omarchy's is a wordmark, so render one rather than reuse the
+  # mark. Falls back to the mark when ImageMagick is not installed.
+  if command -v magick >/dev/null && command -v fc-match >/dev/null; then
+    local font; font=$(fc-match -f '%{file}' 'sans-serif:bold' 2>/dev/null || true)
+    if [[ -n $font ]] && magick -background black -fill white -font "$font" -pointsize 200 \
+         "label:$name" -trim +repage -bordercolor black -border 10 "$tmp/word.png" >/dev/null 2>&1; then
+      omarchy-transcode-ascii "$tmp/word.png" "$tmp/saver.txt" --width 80 --mode block --invert >/dev/null 2>&1 || true
+    fi
+  fi
+  [[ -s ${tmp}/saver.txt ]] || omarchy-transcode-ascii "$src" "$tmp/saver.txt" --width 80 --height 20 >/dev/null 2>&1 || true
+  if [[ -s $tmp/saver.txt ]]; then
+    install -m644 "$tmp/saver.txt" "$BRAND_DIR/screensaver.txt"
+    install -m644 "$tmp/saver.txt" "$BRAND_STATE/applied/screensaver.txt"
+    echo "      screensaver.txt <- \"$name\" wordmark"
+  else
+    echo "      screensaver.txt transcode failed; left as it was"
+  fi
+}
+
+undo_session_branding() {
+  local f restored=0
+  for f in about.txt screensaver.txt; do
+    [[ -f $BRAND_STATE/original/$f ]] || continue
+    install -m644 "$BRAND_STATE/original/$f" "$BRAND_DIR/$f" && restored=$((restored + 1))
+  done
+  if (( restored )); then
+    rm -rf "$BRAND_STATE/applied"
+    echo "      restored $restored Omarchy branding file(s) exactly as they were"
+  else
+    echo "      no saved Omarchy branding to restore"
+  fi
+}
+
+# An update can rewrite the session's art, and re-running the whole identity
+# restore for two text files would be absurd - and would ask for a password it
+# does not need. This does that part on its own.
+if [[ $MODE == branding ]]; then
+  log "Re-branding the Omarchy session's About and screensaver"
+  apply_session_branding
+  log "Done. Undo with: $0 --undo"
+  exit 0
+fi
+
 if [[ $MODE == report ]]; then
+  echo; log "Omarchy session branding"
+  if [[ -f $BRAND_STATE/applied/about.txt ]] && cmp -s "$BRAND_STATE/applied/about.txt" "$BRAND_DIR/about.txt"; then
+    echo "      About and screensaver show this distribution"
+  elif [[ -d $BRAND_DIR ]]; then
+    echo "      About and screensaver still show Omarchy's own art"
+  else
+    echo "      not present on this machine"
+  fi
   echo; log "Report only. Re-run with --apply."; exit 0
 fi
 
@@ -65,6 +177,8 @@ if [[ $MODE == undo ]]; then
   log "Removing the identity hook"
   sudo rm -f "$HOOK" "$HELPER"
   sudo sed -i "\|^NoExtract = $FASTFETCH\$|d" "$PACCONF"
+  log "Restoring Omarchy's own session branding"
+  undo_session_branding
   log "Done. Omarchy's branding will apply again on its next update."
   exit 0
 fi
@@ -140,6 +254,9 @@ Exec = $HELPER
 HOOKEOF
 echo "      $HOOK"
 echo "      $HELPER"
+
+log "Re-branding the Omarchy session's About and screensaver"
+apply_session_branding
 
 cat <<EOF
 

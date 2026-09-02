@@ -85,7 +85,7 @@ jobs:
           pkg=$(ls omarchy-on-cachyos-*.pkg.tar.* | head -1)
           echo "built: $pkg"
           list=$(bsdtar -tf "$pkg")
-          for c in omarchy-on-cachyos omarchy-window omarchy-window-shortcuts \
+          for c in omarchy-on-cachyos ooc omarchy-window omarchy-window-shortcuts \
                    omarchy-oc-install \
                    omarchy-oc-uninstall omarchy-oc-block-updates \
                    omarchy-oc-verify-boot omarchy-oc-preserve-identity \

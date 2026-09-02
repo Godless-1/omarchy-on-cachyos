@@ -61,6 +61,15 @@ stale_shortcuts() { # stale_shortcuts <root> <entry-count> [holders-json]
   fi > "$d/kde-shortcuts.backup.json"
 }
 
+# The session's About art, as preserve-cachyos-identity --branding leaves it:
+# a copy of what we wrote, beside the live file.
+branding() { # branding <root> <applied-art> <live-art>
+  local d="$1/home/.config/omarchy/branding" t="$1/home/.local/share/omarchy-cachyos/branding"
+  mkdir -p "$d" "$t/applied"
+  printf '%s\n' "$2" > "$t/applied/about.txt"
+  printf '%s\n' "$3" > "$d/about.txt"
+}
+
 # A holders entry for a process that really is running: this shell.
 live_holder() {
   local s; s=$(</proc/$$/stat)
@@ -135,6 +144,24 @@ expect_not "stays quiet while a live window still holds the keys" \
 R=$(new_root); stale_shortcuts "$R" 3 omit
 expect_not "stays quiet for a backup predating holder tracking" \
   "keyboard shortcut" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); branding "$R" "CACHYOS-ART" "OMARCHY-ART"
+expect "detects Omarchy branding overwriting the session art" \
+  "branding has come back" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); branding "$R" "CACHYOS-ART" "OMARCHY-ART"
+expect "  offers the lightweight re-brand, not the full identity restore" \
+  "preserve-cachyos-identity.sh --branding" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); branding "$R" "CACHYOS-ART" "CACHYOS-ART"
+expect_not "stays quiet while the session art is still yours" \
+  "branding has come back" "$(check "$R")"; rm -rf "$R"
+
+# Never applied means nothing to have drifted, so nothing to report.
+R=$(new_root); mkdir -p "$R/home/.config/omarchy/branding"
+printf 'OMARCHY-ART\n' > "$R/home/.config/omarchy/branding/about.txt"
+expect_not "says nothing when the branding was never changed" \
+  "branding has come back" "$(check "$R")"; rm -rf "$R"
 
 printf '\n\033[1;34m== severity ordering\033[0m\n'
 R=$(new_root); printf 'HOOKS=(x)\n' > "$R/etc/mkinitcpio.conf.d/omarchy_hooks.conf"

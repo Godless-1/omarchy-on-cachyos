@@ -143,6 +143,21 @@ diagnose() {
     fi
   fi
 
+  # --- session branding -------------------------------------------------
+  # An Omarchy update rewrites the About and screensaver art in $HOME. There is
+  # no pacman hook that can fix a per-user file for the right user, so this is
+  # detected and offered instead of being silently re-asserted.
+  local bdir bstate
+  bdir="$HOME/.config/omarchy/branding"
+  bstate="${OC_BRANDING_STATE:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/branding}"
+  if [[ -f $bstate/applied/about.txt && -f $bdir/about.txt ]] \
+     && ! cmp -s "$bstate/applied/about.txt" "$bdir/about.txt"; then
+    add MEDIUM branding \
+      "Omarchy's branding has come back in the session's About window" \
+      "You had set this to your own distribution's logo, and an Omarchy update has overwritten it. Only the two ASCII-art files in your home directory are affected; the system identity that fastfetch and the boot splash read is guarded separately and is unaffected." \
+      "$HERE/preserve-cachyos-identity.sh --branding"
+  fi
+
   # --- keyboard ---------------------------------------------------------
   # A windowed Omarchy session borrows KDE's Meta+ combinations and hands them
   # back on exit. A backup still on disk means some session was killed first,

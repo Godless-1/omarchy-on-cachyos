@@ -297,10 +297,11 @@ instead and the file names in the second column are what you call.
 | --- | --- | --- |
 | `omarchy-on-cachyos` | [`omarchy-on-cachyos`](omarchy-on-cachyos) | **Menu fronting everything below.** `status` prints state and exits |
 | `omarchy-window` | [`omarchy-window`](omarchy-window) | Omarchy in a window. `--bare`, `-s WxH`, `--detach`, `--install-desktop` |
+| `ooc` | [`omarchy-on-cachyos`](omarchy-on-cachyos) | Short name for the menu below. `ooc status`, `ooc check`, `ooc fix` |
 | `omarchy-window-shortcuts` | [`omarchy-window-shortcuts`](omarchy-window-shortcuts) | Lend Omarchy KDE's <kbd>Meta</kbd>+ keys, keeping <kbd>Super</kbd> and <kbd>Alt</kbd>+<kbd>Tab</kbd>. `suppress`, `restore`, `status`, `--dry-run` |
 | `omarchy-oc-install` | [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
 | `omarchy-oc-block-updates` | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
-| `omarchy-oc-preserve-identity` | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme and fastfetch. `--apply`, `--undo` |
+| `omarchy-oc-preserve-identity` | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme, fastfetch and the Omarchy session's own art. `--apply`, `--branding`, `--undo` |
 | `omarchy-oc-verify-boot` | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
 | `omarchy-oc-clean-boot` | [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<token>/` dirs. `--archive`, `--delete` |
 | `omarchy-oc-uninstall` | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse the install. `--keep-apps` |
@@ -310,6 +311,33 @@ so it scripts as well as it menus.
 
 An already-open shell caches command lookups: `hash -r` in bash, `rehash` in zsh. fish picks
 them up on its own.
+
+## Your distribution's identity
+
+Omarchy replaces distribution identity in **two separate places**, and they need different
+handling.
+
+**The system files.** `/etc/os-release`, the Plymouth theme and the fastfetch config are what
+`fastfetch`, the boot splash and every distro-detection script read. `omarchy-settings` has a
+post-install script that overwrites them, and `NoExtract` cannot stop a script. So these are
+restored and pinned by a pacman hook that re-asserts them after every Omarchy upgrade.
+
+**The session's own art.** Inside Omarchy there is a second set that the system files do not
+touch: its About window and its screensaver read ASCII art from
+`~/.config/omarchy/branding`. Those still said Omarchy no matter what `/etc/os-release` said.
+
+```bash
+omarchy-oc-preserve-identity --branding    # re-do just the session art, no sudo
+```
+
+It renders your own distribution's logo, read from `os-release` and its icon rather than
+hardcoded, so it works the same on Arch or anywhere else. Omarchy's originals are copied
+aside first and `--undo` puts them back byte for byte.
+
+There is no pacman hook for this half, deliberately: these are per-user files, and a hook
+runs as root with no reliable idea of whose home to write to. So an update that overwrites
+them is **detected and offered** instead, by `ooc check`, alongside everything else.
+
 
 ## Release names
 

@@ -3,7 +3,7 @@
 # Maintainer: Godless-1 <19769978+Godless-1@users.noreply.github.com>
 
 pkgname=omarchy-on-cachyos
-pkgver=1.4.3.2
+pkgver=1.4.3.3
 pkgrel=1
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
@@ -46,6 +46,7 @@ sha256sums=('SKIP')
 _libdir=/usr/lib/$pkgname
 _cmds=(
   'omarchy-on-cachyos:omarchy-on-cachyos'
+  'ooc:omarchy-on-cachyos'
   'omarchy-window:omarchy-window'
   'omarchy-window-shortcuts:omarchy-window-shortcuts'
   'omarchy-oc-install:install-omarchy-on-cachyos.sh'
