@@ -143,6 +143,78 @@ done
 
 ---
 
+## "sd-encrypt NOT in this image" (false alarm)
+
+If a checker greps `lsinitcpio -a` output for a `Hooks:` line, **it will report a false
+failure on any systemd initramfs.** There is no such line. `lsinitcpio -a` prints Image,
+Created with, Kernel, Early CPIO, Size, Compressed with, and Included modules — no hook list.
+
+`sd-encrypt` is a *build-time* hook. Its output is systemd's cryptsetup machinery, not a
+runtime hook script, so the correct question is whether that machinery is in the image:
+
+```bash
+sudo lsinitcpio -l /path/to/initramfs | grep -E 'systemd-cryptsetup|cryptsetup.target'
+```
+
+A healthy systemd + LUKS image contains:
+
+```text
+usr/bin/systemd-cryptsetup
+usr/lib/systemd/system-generators/systemd-cryptsetup-generator
+usr/lib/systemd/system/cryptsetup.target
+usr/lib/systemd/system/sysinit.target.wants/cryptsetup.target
+```
+
+That last path is the one that matters — it is what activates cryptsetup at boot.
+
+For a **busybox** initramfs the equivalent artifact is the hook script itself:
+
+```bash
+sudo lsinitcpio -l /path/to/initramfs | grep -E '(^|/)hooks/encrypt$'
+```
+
+> [!IMPORTANT]
+> A check that cannot distinguish *"absent"* from *"I looked in the wrong place"* is worse
+> than no check. It produces false alarms exactly when you most need to trust the tool.
+> `verify-reboot-safety.sh` now reports an unreadable image as a warning that says so,
+> and never as a failure.
+
+---
+
+## Orphaned `/boot/<machine-id>/` directories
+
+`kernel-install` writes to `/boot/<entry-token>/<kernel>/`, where the token defaults to
+`/etc/machine-id` (overridable via `/etc/kernel/entry-token`). Reinstalling, or regenerating
+the machine-id, strands the old directory: never booted, never updated, holding a few hundred
+MB on an ESP that is usually small.
+
+They are also misleading — a checker that inspects every image on disk will flag stale ones
+for lacking a theme or setting that only the live images have. Identify them:
+
+```bash
+cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id
+ls -la /boot/
+```
+
+Anything matching `[0-9a-f]{32}` that is not that token is an orphan. Clean it up safely:
+
+```bash
+./clean-stale-boot-entries.sh            # report only
+./clean-stale-boot-entries.sh --archive  # move out of /boot, keep a copy
+```
+
+The script never touches the active token and **refuses to remove anything your bootloader
+still references** — check that yourself first if you are doing it by hand:
+
+```bash
+sudo grep -c "$(basename /boot/<suspect-token>)" /boot/limine.conf
+```
+
+If it is referenced, regenerate the boot config (`sudo limine-update`) before removing
+anything, or you will be left with dangling menu entries.
+
+---
+
 ## Verifying you can still boot
 
 ```bash

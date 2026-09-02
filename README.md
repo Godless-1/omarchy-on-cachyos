@@ -258,6 +258,7 @@ This is the gentlest way to learn Hyprland's keybindings.
 | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
 | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
 | [`omarchy-window`](omarchy-window) | Omarchy in a window. `--bare`, `-s WxH`, `--no-rule` |
+| [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<machine-id>/` dirs. `--archive`, `--delete` |
 
 ## Documentation
 

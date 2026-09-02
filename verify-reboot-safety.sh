@@ -33,6 +33,7 @@ EFF=$(sudo bash -c 'HOOKS=(); MODULES=(); . /etc/mkinitcpio.conf
   for f in /etc/mkinitcpio.conf.d/*.conf; do [ -e "$f" ] && . "$f"; done; echo "${HOOKS[*]}"')
 echo "        $EFF"
 grep -q 'rd.luks' /proc/cmdline && LUKS=1 || LUKS=0
+PLY_THEME=$(grep -i '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
 if (( LUKS )); then
   [[ $EFF == *sd-encrypt* ]] && ok "sd-encrypt present (matches rd.luks.uuid= on cmdline)" \
                              || bad "sd-encrypt MISSING but root is LUKS - would not unlock"
@@ -46,24 +47,60 @@ else ok "root is not LUKS - encryption hooks not required"; fi
 hdr "3. Actual initramfs on disk"
 # Two layouts in the wild:
 #   classic mkinitcpio : /boot/initramfs-<kernel>.img
-#   kernel-install     : /boot/<machine-id>/<kernel>/initramfs   (CachyOS + limine)
+#   kernel-install     : /boot/<entry-token>/<kernel>/initramfs   (CachyOS + limine)
+# The entry token defaults to the machine-id. Images under a DIFFERENT token are
+# orphans from a previous install - they are never booted, so judging them is noise.
+ACTIVE_TOKEN=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null)
 mapfile -t IMGS < <(sudo find /boot -maxdepth 4 \
   \( -name 'initramfs*.img' -o -name 'initramfs' -o -name 'initrd' \) -type f 2>/dev/null | sort)
-if ((${#IMGS[@]}==0)); then
-  warn "no initramfs*.img found under /boot (UKI setup?); listing /boot:"
+
+# There is NO "Hooks" line in lsinitcpio -a for a systemd image: sd-encrypt is a
+# build-time hook that installs systemd-cryptsetup and its units, leaving no runtime
+# hook list. Grepping for one reports a false failure, which is worse than no check.
+ORPHANS=()
+if (( ${#IMGS[@]} == 0 )); then
+  warn "no initramfs found under /boot - cannot inspect (UKI-only setup?)"
   sudo ls -la /boot | sed 's/^/        /'
 else
   for img in "${IMGS[@]}"; do
+    token=$(basename "$(dirname "$(dirname "$img")")")
+    label="$(basename "$(dirname "$img")")"
+    if [[ -n ${ACTIVE_TOKEN:-} && $token != "$ACTIVE_TOKEN" && ${#token} == 32 ]]; then
+      ORPHANS+=("$(dirname "$(dirname "$img")")")
+      continue
+    fi
     printf '        %s  (%s)\n' "$img" "$(sudo stat -c %y "$img" | cut -d. -f1)"
-    if command -v lsinitcpio >/dev/null; then
-      H=$(sudo lsinitcpio -a "$img" 2>/dev/null | grep -i '^ *Hooks' | head -1)
-      [[ -n $H ]] && echo "          $H"
-      if (( LUKS )); then
-        echo "$H" | grep -q 'sd-encrypt' && ok "$(basename "$img"): sd-encrypt baked in" \
-                                         || bad "$(basename "$img"): sd-encrypt NOT in this image"
+    LIST=$(sudo lsinitcpio -l "$img" 2>/dev/null)
+    if [[ -z $LIST ]]; then
+      warn "$label: could not read image - NOT a failure, just uninspectable"; continue
+    fi
+    if (( LUKS )); then
+      if [[ $EFF == *sd-encrypt* ]]; then
+        grep -qE 'systemd-cryptsetup-generator|bin/systemd-cryptsetup' <<<"$LIST" \
+          && ok "$label: systemd-cryptsetup present (sd-encrypt did its job)" \
+          || bad "$label: systemd-cryptsetup ABSENT - root would not unlock"
+        grep -qE 'sysinit\.target\.wants/cryptsetup\.target' <<<"$LIST" \
+          && ok "$label: cryptsetup.target wired into sysinit.target.wants" \
+          || warn "$label: cryptsetup.target not in sysinit.target.wants"
+      else
+        grep -qE '(^|/)hooks/encrypt$' <<<"$LIST" \
+          && ok "$label: busybox encrypt hook present" \
+          || bad "$label: no encryption hook found"
       fi
     fi
+    if [[ -n ${PLY_THEME:-} ]]; then
+      grep -q "plymouth/themes/${PLY_THEME}/" <<<"$LIST" \
+        && ok "$label: plymouth theme '${PLY_THEME}' baked in" \
+        || warn "$label: plymouth theme '${PLY_THEME}' not in this image (text prompt fallback)"
+    fi
   done
+  if (( ${#ORPHANS[@]} )); then
+    printf '        active entry token: %s\n' "${ACTIVE_TOKEN:-unknown}"
+    while read -r o; do
+      printf '        orphaned (not booted, not judged): %s  [%s]\n' "$o" "$(sudo du -sh "$o" 2>/dev/null | cut -f1)"
+    done < <(printf '%s\n' "${ORPHANS[@]}" | sort -u)
+    echo   "        reclaim with: ./clean-stale-boot-entries.sh"
+  fi
 fi
 
 hdr "4. Kernel cmdline vs initramfs capability"
@@ -76,7 +113,7 @@ if (( LUKS )); then
 fi
 
 hdr "5. Plymouth (renders the LUKS prompt)"
-T=$(grep -i '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null | cut -d= -f2)
+T="$PLY_THEME"
 echo "        configured theme: ${T:-<none>}"
 if [[ -n $T ]]; then
   [[ -d /usr/share/plymouth/themes/$T ]] && ok "theme '$T' exists on disk" \
