@@ -1,3 +1,15 @@
+# SPDX-FileCopyrightText: 2026 Godless-1
+# SPDX-License-Identifier: CC0-1.0
+
+# makepkg build output - never belongs in the repository. Committing it once
+# made CI rebuild a stale extracted source tree instead of the tagged tarball.
+src/
+pkg/
+*.pkg.tar.*
+*.tar.gz
+*.tar.xz
+
+# local noise
 *.log
 *.bak
 *.pacnew
