@@ -74,7 +74,7 @@ Listed because a provenance page that claims a clean run would be worth less tha
 | Mistake | How it surfaced | Fix |
 |---|---|---|
 | Claimed `omarchy-update` overwrites `pacman.conf` | Reading the script; it does not — only `omarchy-refresh-pacman` does | Corrected in the docs; the real risk (migrations) documented instead |
-| Nested window defaulted to 1920×1080 | Larger than a <logical-size> logical HiDPI desktop | Queries KWin for the real work area |
+| Nested window used a fixed default size | Larger than the logical desktop on a scaled display | Queries KWin for the real work area |
 | Auto-size picked a **disabled** output | A disabled output still reports geometry | Filters to enabled outputs |
 | `--bare` disabled Omarchy's autostart, silently killing `SUPER+SPACE` | The menu is a shell plugin and had no backend | `--bare` now starts the shell explicitly |
 | Config seeding read only one of the two packages shipping `/etc/skel` | 96 migration markers never landed | Seeds from both |
@@ -151,6 +151,30 @@ why they leak nothing. Commits are authored under a GitHub `noreply` address by 
 
 The one identifier present is the GitHub account that owns the repository, which is
 unavoidable for a public repository and was chosen deliberately.
+
+### Data minimisation, not just secret-scrubbing
+
+Removing secrets is the easy half. The harder one is the **mosaic effect**: individually
+mundane facts that combine into a description of one machine. A form factor, a GPU vendor
+pair, an exact resolution and scale factor, a partition size, a greeter, a filesystem — none
+is sensitive alone, and together they describe a single computer.
+
+So incidental specifics were generalised wherever they were not load-bearing:
+
+| Was | Now | Why |
+| --- | --- | --- |
+| "a disabled output" | "a disabled output" | The form factor is irrelevant to the bug |
+| An exact resolution and scale factor | The scaling rule, plus a command to read your own | The rule is what transfers; the numbers were one machine's |
+| A reclaimed byte count and ESP size | "a small ESP adds up quickly" | Storage sizes describe hardware |
+| Eight hex characters of two machine-ids | `<active-token>`, `<stale-token>` | A 32-bit prefix of a real identifier is still an identifier |
+| A named greeter and GPU vendors | "a greetd-based greeter", "more than one GPU" | Enough to say what was exercised, not which machine |
+
+What stays is what the project is *about* — a LUKS root on btrfs with limine and snapper —
+because that is the subject matter, not an incidental detail about the author's hardware.
+
+Documentation examples now use placeholders and teach the rule rather than reprinting one
+machine's output. That is better documentation independently of the privacy benefit: a reader
+should be running the command on their own system, not comparing against someone else's.
 
 ## Auditing this yourself
 

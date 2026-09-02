@@ -280,7 +280,7 @@ Arch or an Arch derivative with a working desktop session, `pacman`, `curl`, `bs
 exact work-area fitting is KDE-specific (`kscreen-doctor`, KWin scripting) and degrades
 gracefully elsewhere.
 
-Developed against **Omarchy 4.0.2** on **CachyOS** with LUKS root on btrfs, limine and
+Developed against **Omarchy 4.0.2** on **CachyOS**, with a LUKS root on btrfs, limine and
 snapper, a greetd-based greeter, and more than one GPU. Other bases should work; the guards
 are written defensively and the verifier will tell you the truth either way.
 

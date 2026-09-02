@@ -23,8 +23,14 @@ configure — the reason a VM was considered and rejected for this use case.
 ## Exact fitting
 
 A nested output larger than the host's **logical** desktop produces a window bigger than the
-screen. On HiDPI this bites hard: a <width>×<height> display at 2× scale has a logical desktop of
-only <logical-size>, so a naive `1920x1080` default does not fit.
+screen. Scaling makes this easy to get wrong: a display at 2× scale reports a logical
+desktop half its pixel width and height, and less again at higher factors. Sizing a nested
+output from pixel dimensions therefore produces a window larger than the screen. Read your
+own values rather than assuming:
+
+```bash
+kscreen-doctor -o | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'Output:|Geometry|Scale|enabled'
+```
 
 The script asks KWin for the authoritative work area — screen minus panels — via its
 scripting API:

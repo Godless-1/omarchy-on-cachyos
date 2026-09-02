@@ -32,7 +32,7 @@ declare -a GUARDS=(
   "etc/docker/daemon.json"                        # would change your Docker bridge subnet + DNS
   "etc/systemd/resolved.conf.d/20-docker-dns.conf"
   "etc/systemd/system/docker.service.d/no-block-boot.conf"
-  "etc/sddm.conf.d/*"                             # you use a greetd-based greeter, not SDDM
+  "etc/sddm.conf.d/*"                             # irrelevant unless SDDM is your display manager
   "etc/skel/.config/alacritty/*"                  # owned by cachyos-alacritty-config, which cachyos-kde-settings requires
   # Keep the blocked-command guards from block-omarchy-updates.sh in place.
   # This block is rewritten on every run, so these must live here too.
@@ -168,7 +168,7 @@ fi
 run "sudo pacman -Sy"
 
 # ------------------------------------------------------------ install
-log "Installing the omarchy package (sddm assumed-installed: a greetd-based greeter stays your greeter)"
+log "Installing the omarchy package (sddm assumed-installed: your display manager is kept)"
 run "sudo pacman -S --needed --noconfirm omarchy --assume-installed sddm --overwrite '/etc/skel/.config/alacritty/*'"
 
 # ---- HARD GATE: verify the boot guards actually held -------------------
@@ -219,7 +219,7 @@ else
 fi
 
 # ------------------------------------------------ session entry
-log "Exposing the Omarchy session to a greetd-based greeter"
+log "Exposing the Omarchy session to your greeter"
 run "sudo mkdir -p /usr/share/wayland-sessions"
 run "sudo ln -sfn /usr/local/share/wayland-sessions/omarchy.desktop /usr/share/wayland-sessions/omarchy.desktop"
 

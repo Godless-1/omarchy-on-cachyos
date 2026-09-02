@@ -105,7 +105,8 @@ Your logical desktop is smaller than your pixel resolution when scaling is activ
 kscreen-doctor -o | sed 's/\x1b\[[0-9;]*m//g' | grep -E 'Output:|Geometry|Scale|enabled'
 ```
 
-A <width>×<height> display at 2× is a <logical-size> logical desktop. Re-run `omarchy-window` with no
+A display at 2× scale gives a logical desktop half its pixel dimensions, and less again at
+higher factors — that is the number a window has to fit inside. Re-run `omarchy-window` with no
 `-s` and it fits itself, or pass an explicit `-s 1400x800`.
 
 ---
@@ -213,7 +214,7 @@ Anything matching `[0-9a-f]{32}` that is not that token is an orphan. Clean it u
 > See [what was not tested](../PROVENANCE.md#what-was-not-tested).
 
 A real run looks like this — note that it checks bootloader references *before* touching
-anything, and archives rather than deletes by default (machine-ids abbreviated):
+anything, and archives rather than deletes by default (tokens and sizes are placeholders):
 
 ```text
 ==> Active entry token: <active-token>
@@ -230,8 +231,8 @@ anything, and archives rather than deletes by default (machine-ids abbreviated):
 ==> Archiving <stale-token> -> ~/.local/share/omarchy-cachyos/stale-boot/
 ```
 
-An orphaned token often holds more than you expect — two kernels, their initramfs images, and
-`limine_history` copies kept for snapshot entries. On a small ESP that adds up quickly.
+An orphaned token often holds more than you expect — every installed kernel, its initramfs,
+and `limine_history` copies kept for snapshot entries. On a small ESP that adds up quickly.
 
 The archive is a **copy, then remove**, so nothing is destroyed. Delete it once you have
 rebooted successfully and are happy:
