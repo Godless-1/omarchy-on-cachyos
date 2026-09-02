@@ -1,0 +1,38 @@
+<!--
+SPDX-FileCopyrightText: 2026 Godless-1
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="880" height="228" viewBox="0 0 880 228" role="img" aria-label="Build provenance: written by Claude Opus 5, directed and executed by a human">
+  <defs>
+    <linearGradient id="spine" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#7aa2f7"/>
+      <stop offset="55%"  stop-color="#bb9af7"/>
+      <stop offset="100%" stop-color="#f7768e"/>
+    </linearGradient>
+  </defs>
+  <rect width="880" height="228" rx="14" fill="#16161e"/>
+  <rect width="880" height="228" rx="14" fill="none" stroke="#292e42" stroke-width="1"/>
+  <rect x="0" y="18" width="4" height="192" rx="2" fill="url(#spine)"/>
+  <g font-family="JetBrains Mono, DejaVu Sans Mono, Menlo, monospace">
+    <text x="36" y="46" font-size="11.5" fill="#565f89" letter-spacing="3.4">B U I L D   P R O V E N A N C E</text>
+    <line x1="36" y1="60" x2="844" y2="60" stroke="#292e42" stroke-width="1"/>
+    <g font-size="13.5">
+      <text x="36"  y="90"  fill="#565f89">written by</text>
+      <text x="188" y="90"  fill="#c0caf5">Claude Opus 5</text>
+      <text x="322" y="90"  fill="#414868">(claude-opus-5, via Claude Code)</text>
+
+      <text x="36"  y="116" fill="#565f89">directed by</text>
+      <text x="188" y="116" fill="#c0caf5">a human</text>
+      <text x="270" y="116" fill="#414868">— scope, review, and every privileged command</text>
+
+      <text x="36"  y="142" fill="#565f89">method</text>
+      <text x="188" y="142" fill="#9ece6a">research → dry-run → verify empirically → iterate</text>
+
+      <text x="36"  y="168" fill="#565f89">claims</text>
+      <text x="188" y="168" fill="#c0caf5">tested on real hardware, not asserted</text>
+    </g>
+    <line x1="36" y1="186" x2="844" y2="186" stroke="#292e42" stroke-width="1"/>
+    <text x="36"  y="208" font-size="12" fill="#414868">No secrets, hostnames, UUIDs or personal data were published.</text>
+    <text x="844" y="208" font-size="12" fill="#7aa2f7" text-anchor="end">PROVENANCE.md ›</text>
+  </g>
+</svg>

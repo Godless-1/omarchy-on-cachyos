@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Godless-1
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# omarchy-window - run the Omarchy desktop in a window on your Plasma session.
+#
+# Sizes itself to KWin's real work area (your screen minus the Plasma panel) and
+# installs a KWin rule so the window lands exactly there with no decoration.
+# Same machine, same filesystem as Plasma - nothing to share.
+#
+#   omarchy-window              # full Omarchy (bar, menu, autostart)
+#   omarchy-window --bare       # menu + bar, but no host-session env import
+#   omarchy-window -s 1400x800  # explicit size, skips the KWin rule
+#   omarchy-window --no-rule    # don't touch KWin rules
+#
+# Exit with SUPER+ESCAPE, or close the window.
+
+set -euo pipefail
+
+SIZE=""; MODE=full; USE_RULE=1
+while (($#)); do
+  case "$1" in
+    --bare) MODE=bare; shift ;;
+    --no-rule) USE_RULE=0; shift ;;
+    -s|--size) SIZE="$2"; USE_RULE=0; shift 2 ;;
+    -h|--help) sed -n '2,15p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+
+[[ -n ${WAYLAND_DISPLAY:-} ]] || { echo "Needs a Wayland session." >&2; exit 1; }
+command -v Hyprland >/dev/null || { echo "Hyprland not installed." >&2; exit 1; }
+[[ -d /usr/share/omarchy ]] || { echo "Omarchy not installed." >&2; exit 1; }
+
+QDBUS=$(for q in qdbus6 qdbus-qt6 qdbus; do command -v "$q" >/dev/null && echo "$q" && break; done)
+
+# --- KWin's authoritative work area: screen minus panels -------------------
+workarea() {
+  [[ -n ${QDBUS:-} ]] || return 1
+  local js id out
+  js=$(mktemp --suffix=.js)
+  cat > "$js" <<'JS'
+var a = workspace.clientArea(KWin.MaximizeArea, workspace.activeScreen, workspace.currentDesktop);
+print("OMARCHY_WA " + a.x + " " + a.y + " " + a.width + " " + a.height);
+JS
+  $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript omawin >/dev/null 2>&1 || true
+  id=$($QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$js" omawin 2>/dev/null) || { rm -f "$js"; return 1; }
+  $QDBUS org.kde.KWin "/Scripting/Script$id" org.kde.kwin.Script.run >/dev/null 2>&1 || { rm -f "$js"; return 1; }
+  sleep 0.6
+  out=$(journalctl --user -b --since "-15s" 2>/dev/null | grep -o 'OMARCHY_WA .*' | tail -1)
+  $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript omawin >/dev/null 2>&1 || true
+  rm -f "$js"
+  [[ -n $out ]] || return 1
+  echo "${out#OMARCHY_WA }"
+}
+
+# Fallback: largest ENABLED output (a disabled panel must not be considered).
+fallback_size() {
+  local w h
+  read -r w h < <(kscreen-doctor -o 2>/dev/null | sed 's/\x1b\[[0-9;]*m//g' \
+    | awk '/^Output:/{en=0} /^[[:space:]]+enabled$/{en=1}
+           /Geometry:/{if(en){split($3,g,"x"); print g[1], g[2]}}' | sort -rn | head -1)
+  [[ -n ${w:-} && -n ${h:-} ]] && echo "$w $h" || echo "1280 720"
+}
+
+WA_X=0; WA_Y=0
+if [[ -z $SIZE ]]; then
+  if wa=$(workarea); then
+    read -r WA_X WA_Y WA_W WA_H <<<"$wa"
+    SIZE="${WA_W}x${WA_H}"
+    FITTED="KWin work area (screen minus panel) at ${WA_X},${WA_Y}"
+  else
+    read -r WA_W WA_H < <(fallback_size)
+    SIZE="${WA_W}x${WA_H}"; USE_RULE=0
+    FITTED="largest enabled output (KWin query unavailable)"
+  fi
+fi
+
+# --- KWin rule: place the nested window exactly, with no decoration --------
+# The nested compositor's window class is 'aquamarine' (Hyprland's backend).
+if (( USE_RULE )) && [[ -n ${QDBUS:-} ]]; then
+  python3 - "$HOME/.config/kwinrulesrc" "$WA_X" "$WA_Y" "${SIZE%x*}" "${SIZE#*x}" <<'PY'
+import configparser, sys
+path, x, y, w, h = sys.argv[1], *sys.argv[2:6]
+UUID = "omarchy-nested-window"
+cp = configparser.RawConfigParser(); cp.optionxform = str
+cp.read(path)
+if not cp.has_section("General"): cp.add_section("General")
+rules = [r for r in cp["General"].get("rules", "").split(",") if r]
+if UUID not in rules: rules.append(UUID)
+cp["General"]["rules"] = ",".join(rules)
+cp["General"]["count"] = str(len(rules))
+if cp.has_section(UUID): cp.remove_section(UUID)
+cp.add_section(UUID)
+cp[UUID].update({
+    "Description": "Omarchy nested window (managed by omarchy-window)",
+    "wmclass": "aquamarine", "wmclasscomplete": "false", "wmclassmatch": "1",
+    "position": f"{x},{y}", "positionrule": "2",
+    "size": f"{w},{h}",     "sizerule": "2",
+    "noborder": "true",     "noborderrule": "2",
+})
+with open(path, "w") as f: cp.write(f, space_around_delimiters=False)
+PY
+  $QDBUS org.kde.KWin /KWin org.kde.KWin.reconfigure >/dev/null 2>&1 || true
+  RULED=1
+fi
+
+# --- generate the nested config -------------------------------------------
+CFG="$(mktemp -d)/nested.lua"
+trap 'rm -rf "$(dirname "$CFG")"' EXIT
+{
+  echo 'dofile((os.getenv("OMARCHY_PATH") or "/usr/share/omarchy") .. "/default/hypr/bootstrap.lua")'
+  if [[ $MODE == bare ]]; then
+    # Omarchy's autostart also runs `systemctl --user import-environment`, which
+    # would overwrite WAYLAND_DISPLAY in your HOST user session. Stub the module,
+    # then start just the shell - the menu and bar are shell plugins, so without
+    # it SUPER+SPACE has no backend to talk to.
+    echo 'package.loaded["default.hypr.autostart"] = true'
+  fi
+  echo 'require("default.hypr.omarchy")'
+  for m in input bindings looknfeel; do echo "pcall(require, \"hypr.$m\")"; done
+  if [[ $MODE == bare ]]; then
+    echo 'hl.on("hyprland.start", function() hl.exec_cmd("omarchy-launch-shell") end)'
+  fi
+  echo 'hl.env("GDK_SCALE", "1")'
+  echo "hl.monitor({ output = \"\", mode = \"${SIZE}@60\", position = \"0x0\", scale = 1 })"
+  echo 'pcall(require, "default.hypr.toggles")'
+} > "$CFG"
+
+Hyprland --verify-config -c "$CFG" >/dev/null 2>&1 || {
+  echo "Config failed validation:" >&2; Hyprland --verify-config -c "$CFG" >&2; exit 1; }
+
+echo "Omarchy nested window: ${SIZE}"
+[[ -n ${FITTED:-} ]] && echo "  sized to: $FITTED"
+[[ -n ${RULED:-} ]] && echo "  KWin rule installed (exact position, no titlebar)"
+echo "  mode: $MODE"
+echo
+exec Hyprland -c "$CFG"
