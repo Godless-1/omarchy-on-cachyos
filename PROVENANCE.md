@@ -28,16 +28,39 @@ No part of this was generated unattended. No part of it was committed unread.
 
 | Task | Done by |
 | --- | --- |
-| Chose the goal, and changed it twice mid-session | Human |
+| Chose the goal, and revised it as research changed what was possible | Human |
 | Ran every `sudo` command | Human |
-| Approved each destructive step | Human |
-| Decided licence, visibility, and publication | Human |
+| Ran the install, blocker, verifier, cleaner and nested window on real hardware, and returned their output | Human |
+| Approved each destructive step, and executed the history rewrite and force-push | Human |
+| **Found defects by inspection** — see below | Human |
+| Set the privacy standard: identified the fingerprinting risk and judged which details were incidental | Human |
+| Set the final framing, including equal billing for the two run modes | Human |
+| Decided licence, repository visibility, and commit identity | Human |
 | Authenticated to GitHub | Human |
 | Read Omarchy's packages and scripts | Model |
 | Identified the boot hazards | Model |
 | Wrote the scripts and documentation | Model |
 | Designed the verification tests | Model |
 | Reported failures and its own errors | Model |
+
+**Defects found by the operator, not the model.** Testing was not the whole of it; several
+faults were caught by reading what was produced:
+
+- Badge text was unreadable. Measurement afterwards showed 1.83:1 against a required 4.5:1 —
+  reported from use, before anyone had measured anything.
+- GitHub reported two licences where there should have been one, tracing to a prose file
+  sitting on a filename the licence detector scans.
+- A table shipped with an empty header row — the same accessibility fault fixed earlier in
+  this repository and then reintroduced.
+- The README claimed the login session was optional. It is registered unconditionally; there
+  is no flag to skip it.
+- The documentation described the author's hardware in enough incidental detail to identify
+  it, which prompted the whole data-minimisation pass below.
+
+Each of these was in work the model had already checked and declared finished.
+
+That distribution matters for reading the rest of this page: the model wrote the code, and
+the operator repeatedly caught what the model's own checks had missed.
 
 The model held no credentials at any point. It could not authenticate, could not enter a
 password, and could not run a privileged command — every `sudo` invocation was pasted into a
