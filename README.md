@@ -6,15 +6,15 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 <div align="center">
 
 <img src="docs/banner.svg" width="100%"
-     alt="omarchy-on-cachyos. Run the full Omarchy desktop in a window on your existing session, bootloader untouched. Styled as a terminal showing the command ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
+     alt="omarchy-on-cachyos. Run the full Omarchy desktop as a login session, or in a window on your existing session. Bootloader untouched. Styled as a terminal showing the command ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
 
 </div>
 
 # omarchy-on-cachyos
 
-**Run the full [Omarchy](https://omarchy.org) desktop in a window inside the session you
-already use — sized to fit your screen automatically. Add it as a login option too, if you
-want one. On CachyOS or Arch, without letting it near your bootloader, initramfs, or repos.**
+**Two ways to run the full [Omarchy](https://omarchy.org) desktop on CachyOS or Arch: as a
+login session beside the one you already use, and in a window inside it. One install sets up
+both — without letting Omarchy near your bootloader, your initramfs, or your repos.**
 
 <a href="install-omarchy-on-cachyos.sh"><img src="docs/badges/bash.svg" alt="Written in Bash 5.x"></a>
 <a href="https://omarchy.org"><img src="docs/badges/omarchy.svg" alt="Targets Omarchy 4.0.2"></a>
@@ -27,13 +27,13 @@ want one. On CachyOS or Arch, without letting it near your bootloader, initramfs
 
 ## At a glance
 
-**What it does.** Runs the whole Omarchy 4 desktop — bar, launcher, keybindings, theming — in
-an ordinary **window on your current session**, sized to your screen minus your panels. It is
-the same machine and the same filesystem, so there is no VM, no container, and nothing to
-share between them. Your files are simply already there.
+**What it does.** Installs Omarchy 4 and gives you two ways to run it. You get both from a
+single install; neither is a fallback for the other.
 
-**And, as a bonus,** it also registers Omarchy in your greeter's session list, so you can log
-into it full-screen whenever you want the real thing. Both from one install.
+| | |
+| --- | --- |
+| **As a login session** | Omarchy appears in your greeter next to the desktop you already use. Log out, pick it, and you are in the real thing, full-screen, on your hardware. Set up automatically — there is nothing to enable. |
+| **In a window** | The same desktop — bar, launcher, keybindings, theming — running in an ordinary window on your current session, sized to your screen minus your panels. Same machine, same filesystem, so there is no VM, no container, and nothing to share. Your files are already there. |
 
 **Why not just install Omarchy directly.** Omarchy's packages assume they own the
 machine. Unguarded, they rewrite your initramfs hooks, your bootloader entries, and your
@@ -51,7 +51,7 @@ your encryption hook has vanished, and a verifier that proves you can still boot
 | Touches your repositories | Adds one, ordered **last**, so it never overrides yours |
 | Your existing desktop | Untouched — still there, still your default if you prefer |
 | Reversible | Yes — uninstaller, config backups, and a bootable snapshot |
-| Needs a reboot | No. For the window, not even a logout |
+| Needs a reboot | No — a logout for the session, nothing at all for the window |
 
 **The whole flow, start to finish:**
 
@@ -63,7 +63,7 @@ your encryption hook has vanished, and a verifier that proves you can still boot
 ```
 
 Then log out and pick **Omarchy (Hyprland uwsm)**. Not ready to hand over your whole
-session? Run [`./omarchy-window`](#the-nested-window) and get the desktop in a window instead.
+session? Run [`./omarchy-window`](#two-ways-to-run-it) and get the desktop in a window instead.
 
 > [!CAUTION]
 > On a LUKS-encrypted system, installing Omarchy's packages **unguarded** can leave you unable
@@ -88,7 +88,19 @@ session? Run [`./omarchy-window`](#the-nested-window) and get the desktop in a w
 
 ---
 
-## The nested window
+## Two ways to run it
+
+### As a login session
+
+The installer registers Omarchy in your greeter's session list, always — there is no flag to
+skip it and nothing to opt into. Log out and **Omarchy (Hyprland uwsm)** is there beside your
+existing desktop; pick either, any time. It runs at native resolution on your real hardware,
+which is the way to judge how Omarchy actually looks and feels.
+
+Your existing session is untouched and stays selectable, so switching back is a logout, not
+an uninstall.
+
+### In a window on your current session
 
 Hyprland's Aquamarine backend runs nested when `WAYLAND_DISPLAY` is set. So you can run the
 whole Omarchy desktop **in a window on your existing session** — same machine, same
