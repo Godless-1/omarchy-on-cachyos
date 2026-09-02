@@ -4,7 +4,7 @@
 
 pkgname=omarchy-on-cachyos
 pkgver=1.3.0
-pkgrel=1
+pkgrel=2
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
 url="https://github.com/Godless-1/omarchy-on-cachyos"

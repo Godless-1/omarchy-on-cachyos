@@ -7,9 +7,9 @@ post_install() {
       omarchy-on-cachyos          menu, with a status panel
       omarchy-on-cachyos status   print state and exit
 
-  Other commands: omarchy-window, omarchy-oc-install, omarchy-oc-block-updates,
-  omarchy-oc-verify-boot, omarchy-oc-preserve-identity, omarchy-oc-clean-boot,
-  omarchy-oc-uninstall.
+  Other commands: omarchy-window, omarchy-window-shortcuts, omarchy-oc-install,
+  omarchy-oc-block-updates, omarchy-oc-verify-boot, omarchy-oc-preserve-identity,
+  omarchy-oc-clean-boot, omarchy-oc-uninstall.
 
   Already-open shells cache their command lookup. In this one, run:
       bash: hash -r      zsh: rehash      fish: (picks it up on its own)
