@@ -30,6 +30,15 @@ SELF=$(readlink -f "$0")
 # Each instance records its pid in hyprland.lock, so this finds the instance
 # belonging to *this* Hyprland rather than assuming the newest one, which would
 # pick the wrong session the moment two windows are opened together.
+gone_within() { # gone_within <seconds> <pid>
+  local n="$1" pid="$2" i
+  for ((i = 0; i < n; i++)); do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 1
+  done
+  return 1
+}
+
 watch_for_close() { # watch_for_close <hyprland-pid>
   local pid="$1" sig="" f real armed=0 i lockpid
   for ((i = 0; i < 100; i++)); do
@@ -53,12 +62,16 @@ watch_for_close() { # watch_for_close <hyprland-pid>
 
   while kill -0 "$pid" 2>/dev/null; do
     sleep 2
+    # `|| real=""` is load-bearing. Under `set -e` with pipefail an assignment
+    # from a failing pipeline takes the pipeline's status and kills the script,
+    # and hyprctl does fail transiently at exactly the moment a window closes -
+    # so the watchdog used to die silently just as it was needed.
     real=$(HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl monitors -j 2>/dev/null | python3 -c '
 import json, sys
 try:
     print(sum(1 for m in json.load(sys.stdin) if m.get("name") != "FALLBACK"))
 except Exception:
-    pass' 2>/dev/null)
+    pass' 2>/dev/null) || real=""
     # An empty answer is hyprctl failing to reply, not a closed window. Acting
     # on it would kill a perfectly healthy session on a transient hiccup.
     [[ -n $real ]] || continue
@@ -67,9 +80,21 @@ except Exception:
     # as it came up.
     (( real > 0 )) && { armed=1; continue; }
     (( armed )) || continue
-    HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl dispatch exit >/dev/null 2>&1
-    sleep 3
-    kill -0 "$pid" 2>/dev/null && kill -TERM "$pid" 2>/dev/null
+    # Ask nicely, then insist. Every step is guarded: an unguarded failure here
+    # exits the whole watchdog under `set -e`, which is what used to happen -
+    # `dispatch exit` returns 7 on a Lua-dispatcher Hyprland, and the script died
+    # on that line before it could ever fall back to a signal.
+    #
+    # Two spellings because the dispatcher changed: this Hyprland wants
+    # `hl.dsp.exit()` and answers `hl.dispatch: expected a dispatcher` to the
+    # older bare `exit`.
+    HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl dispatch 'hl.dsp.exit()' >/dev/null 2>&1 || true
+    gone_within 5 "$pid" && return 0
+    HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl dispatch exit >/dev/null 2>&1 || true
+    gone_within 5 "$pid" && return 0
+    kill -TERM "$pid" 2>/dev/null || true
+    gone_within 5 "$pid" && return 0
+    kill -KILL "$pid" 2>/dev/null || true
     return 0
   done
 }

@@ -314,11 +314,13 @@ them up on its own.
 ## Release names
 
 Every release carries a codename: the Pokémon whose National Pokédex number is the version
-with the dots removed. **1.4.3 → #143 → Snorlax** — the one that lies in the road and will
-not move until something wakes it, which is precisely what that release fixed.
+with the dots removed. **1.4.3 = #143 = Snorlax**, the one that lies in the road and will not
+move until something wakes it, which is exactly what that release was about.
 
-The number picks the candidate; the release still has to earn it. When the vibe does not
-fit, the notes say so rather than pretending.
+A codename **sticks until the line is proven**. Each fix on top of it gets a fourth version
+digit and an alliterative adjective (Stumbling Snorlax, Sleepless Snorlax) rather than a new
+Pokémon, so the name stops moving only once several releases in a row have behaved. The
+number nominates; the release has to earn it.
 
 ## Documentation
 

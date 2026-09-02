@@ -81,11 +81,19 @@ echo closed > "$WD_STATE"; sleep 7
 is "ends the session once the window is gone" "yes" "$(exited)"
 kill "$WD" 2>/dev/null
 
-printf '\n\033[1;34m== it must NOT fire on a hyprctl hiccup\033[0m\n'
+printf '\n\033[1;34m== it must SURVIVE a hyprctl hiccup, not just stay quiet\033[0m\n'
+# "Did not fire" is also true of a watchdog that has crashed, so asserting only
+# that proves nothing - and it is exactly how a fatal `set -e` exit slipped
+# through: hyprctl fails transiently as a window closes, the assignment took the
+# pipeline's status, and the watchdog died at the moment it was needed. So make
+# it survive a failure and then still do its job.
 start_session live; watchdog; sleep 5
 echo silent > "$WD_STATE"; sleep 7
 is "a failed query is not a closed window"    "no"  "$(exited)"
 is "  the session survives"                   "yes" "$(alive)"
+is "  the watchdog is still running"          "yes" "$(kill -0 "$WD" 2>/dev/null && echo yes || echo no)"
+echo closed > "$WD_STATE"; sleep 7
+is "  and still fires once the window closes" "yes" "$(exited)"
 kill "$WD" 2>/dev/null
 
 printf '\n\033[1;34m== it must NOT fire before the window ever appears\033[0m\n'
