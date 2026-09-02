@@ -14,6 +14,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
     </linearGradient>
   </defs>
   <rect width="880" height="240" rx="14" fill="url(#bg)"/>
+  <rect x="0.5" y="0.5" width="879" height="239" rx="13.5" fill="none" stroke="#3b4261" stroke-width="1"/>
   <rect x="0" y="0" width="880" height="4" rx="2" fill="url(#accent)"/>
   <g font-family="JetBrains Mono, DejaVu Sans Mono, Menlo, monospace">
     <text x="44" y="74" font-size="17" fill="#9aa5ce">~/omarchy-on-cachyos</text>

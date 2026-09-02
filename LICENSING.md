@@ -3,7 +3,7 @@ SPDX-FileCopyrightText: 2026 Godless-1
 SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 
-# Copying
+# Licensing
 
 This project is **copyleft**, deliberately and to the strongest degree the material allows.
 If you build on it, your users get the same freedoms you got. That is the point, not an
@@ -57,7 +57,7 @@ The documentation quotes short excerpts from [Omarchy](https://github.com/baseca
 — hook lists, a handful of lines from `omarchy-refresh-pacman`, `omarchy-menu`,
 `omarchy-migrate` and `autostart.lua` — for identification and criticism. Omarchy is
 MIT-licensed, which is GPL-compatible, and these excerpts are minimal, attributed, and
-quoted in order to explain what the code does. Copyright in them remains with their authors.
+quoted to explain what the code does. Copyright in them remains with their authors.
 
 Omarchy, Basecamp, DHH, CachyOS, KDE and Hyprland are unaffiliated with this project and have
 not endorsed it. Their names are used descriptively.

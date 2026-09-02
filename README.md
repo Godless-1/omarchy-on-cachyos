@@ -6,7 +6,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 <div align="center">
 
 <img src="docs/banner.svg" width="100%"
-     alt="omarchy-on-cachyos. Hyprland beside Plasma, your bootloader untouched. Shown as a terminal running ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
+     alt="omarchy-on-cachyos. Hyprland beside Plasma, your bootloader untouched. Styled as a terminal showing the command ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
 
 </div>
 
@@ -29,21 +29,21 @@ without letting it near your bootloader, your initramfs, or your repos.**
 **What it does.** Puts Omarchy 4's Hyprland desktop in your greeter's session list, next to
 the desktop you already use. You pick one at login. No VM, no container, no second disk.
 
-**Why you need this rather than just installing it.** Omarchy's packages assume they own the
+**Why not just install Omarchy directly.** Omarchy's packages assume they own the
 machine. Unguarded, they rewrite your initramfs hooks, your bootloader entries, and your
 package repositories. On a LUKS-encrypted root, that means **root stops unlocking**.
 
 **What this adds.** Guards that survive `pacman -Syu`, a hard gate that aborts mid-install if
-your encryption hook disappeared, and a verifier that proves you can still boot.
+your encryption hook has vanished, and a verifier that proves you can still boot.
 
-| Property | Answer |
+| Property | What to expect |
 | --- | --- |
 | Time | ~10 minutes plus download |
 | Download | ~750 MB (`--minimal` is much less) |
 | Touches your bootloader | **No** — guarded |
 | Touches your initramfs hooks | **No** — guarded, and verified after |
 | Touches your repositories | Adds one, ordered **last**, so it never overrides yours |
-| Your existing desktop | Untouched. Still there, still default if you want |
+| Your existing desktop | Untouched — still there, still your default if you prefer |
 | Reversible | Yes — uninstaller, config backups, and a bootable snapshot |
 | Needs a reboot | No. Log out and back in |
 
@@ -56,20 +56,20 @@ your encryption hook disappeared, and a verifier that proves you can still boot.
 ./verify-reboot-safety.sh                   # prove the machine still boots
 ```
 
-Then log out and pick **Omarchy (Hyprland uwsm)**. Prefer not to commit yet? Run
-[`./omarchy-window`](#the-nested-window) and get the whole desktop in a window instead.
+Then log out and pick **Omarchy (Hyprland uwsm)**. Not ready to hand over your whole
+session? Run [`./omarchy-window`](#the-nested-window) and get the desktop in a window instead.
 
 > [!CAUTION]
 > On a LUKS-encrypted system, installing Omarchy's packages **unguarded** can leave you unable
 > to unlock your root filesystem. Read [The three hazards](#the-three-hazards) before running
-> anything — including if you decide not to use these scripts.
+> anything — even if you decide not to use these scripts.
 
 ---
 
 <div align="center">
 
 <a href="PROVENANCE.md"><img src="docs/provenance.svg" width="100%"
-  alt="Build provenance. Written by Claude Opus 5, model claude-opus-5, via Claude Code. Directed by a human who set the scope, reviewed the work, and ran every privileged command. Method: research, then dry-run, then verify empirically, then iterate. Claims were tested on real hardware, not asserted. No secrets, hostnames, UUIDs or personal data were published. Full disclosure in PROVENANCE dot md."></a>
+  alt="Build provenance. Written by Claude Opus 5, model claude-opus-5, via Claude Code. Directed by a human who set the scope, reviewed the work, and ran every privileged command. Method: research, then dry-run, then verify empirically, then iterate. Claims were tested on real hardware, not asserted. No secrets, hostnames, UUIDs or personal data were published. Full disclosure in the provenance document."></a>
 
 </div>
 
@@ -77,7 +77,7 @@ Then log out and pick **Omarchy (Hyprland uwsm)**. Prefer not to commit yet? Run
 > (`claude-opus-5`) in Claude Code**, on 2026-09-01, directed and reviewed throughout by a
 > human operator who ran every privileged command personally. Nothing was generated
 > unattended or committed unread. [**PROVENANCE.md**](PROVENANCE.md) gives the full account,
-> including [the eight mistakes made and corrected](PROVENANCE.md#mistakes-made-and-corrected)
+> including [the mistakes made and corrected](PROVENANCE.md#mistakes-made-and-corrected)
 > along the way, and [how to verify every claim yourself](PROVENANCE.md#auditing-this-yourself).
 
 ---
@@ -91,7 +91,7 @@ Omarchy 4 is no longer an install script — it ships as **pacman packages** (`o
 Exec=uwsm start -g -1 -e -D Hyprland hyprland.desktop
 ```
 
-Which means Omarchy can live in your greeter's session list **next to Plasma**, and you pick
+That means Omarchy can live in your greeter's session list **next to Plasma**, and you pick
 one at login.
 
 The catch is that those packages assume they own the machine. On an existing Arch/CachyOS
@@ -163,7 +163,7 @@ See [docs/migrations.md](docs/migrations.md).
 | Mechanism | Protects against |
 | --- | --- |
 | `NoExtract` in `pacman.conf` | Hazards 1 and 2, **durably** — survives package updates |
-| Hard gate after install | Aborts with *DO NOT REBOOT* if `sd-encrypt` vanished |
+| Hard gate after install | Aborts with *DO NOT REBOOT* if `sd-encrypt` has vanished |
 | Binary guards plus `NoExtract` | Hazard 3, from every shell, both sessions, and the Omarchy menu |
 | Snapper snapshot and backups | Rollback if anything else surprises you |
 
@@ -202,8 +202,8 @@ Then make the destructive commands unrunnable, and verify you can still boot:
 ./verify-reboot-safety.sh
 ```
 
-Log out and pick **Omarchy (Hyprland uwsm)** at your greeter. Plasma is untouched and
-one logout away, always.
+Log out and pick **Omarchy (Hyprland uwsm)** at your greeter. Plasma is untouched, and
+always one logout away.
 
 ### What the installer actually does
 
@@ -240,7 +240,7 @@ so the menu (<kbd>Super</kbd>+<kbd>Space</kbd>) and bar work.
 
 This is the gentlest way to learn Hyprland's keybindings.
 
-| Key | Does |
+| Key | Action |
 | --- | --- |
 | <kbd>Super</kbd>+<kbd>Space</kbd> | Omarchy menu |
 | <kbd>Super</kbd>+<kbd>K</kbd> | Omarchy's own keybinding cheatsheet |
@@ -267,7 +267,7 @@ This is the gentlest way to learn Hyprland's keybindings.
 - **[The nested window](docs/nested-window.md)** — sizing, KWin rules, `--bare`
 - **[Migrations](docs/migrations.md)** — the 96 markers and why they matter
 - **[Troubleshooting](docs/troubleshooting.md)** — real conflicts and their fixes
-- **[Copying](COPYING.md)** — why AGPL for code and CC BY-SA for prose
+- **[Licensing](LICENSING.md)** — why AGPL for code and CC BY-SA for prose
 - **[Provenance](PROVENANCE.md)** — how this was built, and the mistakes made doing it
 
 ---
@@ -275,7 +275,7 @@ This is the gentlest way to learn Hyprland's keybindings.
 ## Requirements
 
 Arch or an Arch derivative with a working desktop session, `pacman`, `curl`, `bsdtar`,
-`python3`, and internet access. The nested window additionally wants a Wayland session;
+`python3`, and internet access. The nested window also needs a Wayland session;
 exact work-area fitting is KDE-specific (`kscreen-doctor`, KWin scripting) and degrades
 gracefully elsewhere.
 
@@ -283,13 +283,26 @@ Developed against **Omarchy 4.0.2** on **CachyOS** with LUKS root on btrfs, limi
 snapper, a greetd-based greeter, and more than one GPU. Other bases should work; the guards
 are written defensively and the verifier will tell you the truth either way.
 
-## Accessibility
+## Accessibility and theming
 
-Both banners are decorative restatements — every fact they carry also appears as ordinary
-text nearby, and each has descriptive `alt` text rather than a filename. Colours meet WCAG
-2.1 AA contrast against their backgrounds (measured, not eyeballed), no information is
-conveyed by colour alone, tables have real headers, and there are no placeholder links.
-If you hit something that reads badly in a screen reader, that is a bug — please open an issue.
+The two banners are decoration. Everything they say is also written as ordinary text beside
+them, so nothing is lost if images are off, and each carries descriptive `alt` text rather
+than a filename.
+
+Colour contrast was **measured, not eyeballed** — every foreground meets WCAG 2.1 AA against
+its background. Two colours from the original palette failed (2.9:1 and 2.0:1) and were
+replaced. No meaning is carried by colour alone, tables have real headers, and no link points
+at a placeholder.
+
+**Theming.** The banners are deliberately dark in both GitHub themes rather than swapping with
+`prefers-color-scheme`. That is a considered choice, not an oversight: a theme-swapped light
+variant is exactly what an extension like **Dark Reader** would invert, producing a glaring
+card on an otherwise dark page. A card that is already dark is left alone. Both have a subtle
+border so they read as intentional on GitHub's light theme too. Everything else — alerts,
+tables, `<kbd>` keys, code blocks — uses GitHub's own theme-aware styling.
+
+If something reads badly in a screen reader, or looks wrong in a theme or with a contrast
+extension, that is a bug. Please open an issue.
 
 ---
 
@@ -297,7 +310,7 @@ If you hit something that reads badly in a screen reader, that is a bug — plea
 
 **Copyleft.** Scripts are [AGPL-3.0-or-later](LICENSES/AGPL-3.0-or-later.txt); prose and
 artwork are [CC BY-SA 4.0](LICENSES/CC-BY-SA-4.0.txt). Improve it and your users keep every
-freedom you were given. No CLA, no assignment, no relicensing escape hatch. — [Copying](COPYING.md)
+freedom you were given. No CLA, no assignment, no relicensing escape hatch. — [Licensing](LICENSING.md)
 
 **Unofficial.** Not affiliated with, endorsed by, or supported by Omarchy, Basecamp, DHH,
 or CachyOS. Omarchy is [MIT-licensed](https://github.com/basecamp/omarchy) and excellent —

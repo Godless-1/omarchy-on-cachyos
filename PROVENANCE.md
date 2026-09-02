@@ -81,16 +81,28 @@ Listed because a provenance page that claims a clean run would be worth less tha
 | A conflict scan reported 89 conflicts | 88 were `Replaces`/`Provides` pairs pacman handles | Rewritten to find genuine conflicts; found exactly one |
 | `kscreen-doctor` parser returned empty | ANSI colour codes | Strips escapes first |
 | Guard block was written once and skipped on re-run | Would have dropped a later-added guard | Rewrites the block every run |
+| `verify-reboot-safety.sh` searched `/boot` at depth 2 for `initramfs*.img` | The kernel-install layout is `/boot/<token>/<kernel>/initramfs` — no extension, one level deeper — so it found nothing and still reported PASS on exit code alone | Searches both layouts |
+| The same script then grepped `lsinitcpio -a` for a `Hooks` line | No such line exists for a systemd initramfs; it reported four confident failures on an intact machine | Checks for `systemd-cryptsetup` and `cryptsetup.target` instead, per init style |
+| It judged every image on disk, including orphaned entry directories | Stale images from an old machine-id will always lack what the live ones have | Scoped to the active entry token; orphans reported, not judged |
 
 The pattern worth noting: most were caught by *running the thing*, which is why the dry-run
 and verification steps exist at all.
+
+The last three deserve emphasis, because they are the worst kind. The verification script —
+the one whose entire job is to be trustworthy about whether a machine still boots — was wrong
+twice, and both times it failed **loudly and confidently** rather than quietly. It reported
+`PASS` while silently skipping its most important check, and later reported four failures on a
+system that was completely intact. A check that cannot distinguish *absent* from *I looked in
+the wrong place* is worse than no check at all, because it spends your trust at exactly the
+moment you need it. It now says so explicitly when it cannot inspect something.
 
 ## What was verified rather than assumed
 
 - The hook-list breakage, by evaluating `HOOKS` both ways
 - `pacman.conf` edits, by round-tripping a copy and diffing against the original
 - The KWin work area, by querying KWin instead of computing from panel settings
-- The initramfs, by inspecting the image with `lsinitcpio -a`
+- The initramfs, by listing it with `lsinitcpio -l` and confirming `systemd-cryptsetup`
+  and `cryptsetup.target` are present (`lsinitcpio -a` was the wrong tool — see above)
 - Package resolution, by full dependency resolution before installing
 - Every internal documentation link, mechanically
 - The absence of personal data, by scanning every file
@@ -136,5 +148,5 @@ standard of evidence — not the identity of whoever typed it.
 
 That is a legitimate position and this page exists to let you act on it without wasting your
 time. The findings are reproducible from the commands above, and the licence is
-[copyleft](COPYING.md) — you are free to reimplement any of it, and to do so knowing exactly
+[copyleft](LICENSING.md) — you are free to reimplement any of it, and to do so knowing exactly
 what the original was and was not.

@@ -133,11 +133,14 @@ defers to `limine-mkinitcpio`, which is what actually writes the images and upda
 sudo limine-mkinitcpio
 ```
 
-Confirm the encryption hook survived — this is the check that matters on a LUKS root:
+Confirm the encryption support survived — the check that matters on a LUKS root. Use
+`lsinitcpio -l` and look for the cryptsetup machinery, **not** `-a` and a hook list
+(see the next section for why):
 
 ```bash
 for i in $(sudo find /boot -maxdepth 4 -name initramfs -type f); do
-  sudo lsinitcpio -a "$i" | grep -i '^ *Hooks'
+  echo "== $i"
+  sudo lsinitcpio -l "$i" | grep -E 'systemd-cryptsetup|cryptsetup\.target'
 done
 ```
 
@@ -221,9 +224,11 @@ anything, or you will be left with dangling menu entries.
 ./verify-reboot-safety.sh
 ```
 
-Checks the guards held, re-evaluates the effective `HOOKS`, inspects the **actual initramfs**
-with `lsinitcpio -a` for `sd-encrypt`, confirms the `rd.luks.uuid=` on your cmdline matches a
-real LUKS device, and lists available snapshots.
+Checks the guards held, re-evaluates the effective `HOOKS`, lists the **actual initramfs**
+with `lsinitcpio -l` to confirm the encryption support is really inside it, checks that the
+`rd.luks.uuid=` on your cmdline matches a real LUKS device, verifies the configured Plymouth
+theme is baked in, and lists available snapshots. Images under an inactive entry token are
+reported but not judged.
 
 `--rebuild` additionally regenerates the initramfs and re-inspects it, refusing to run if any
 check is already failing. Worth doing deliberately, while watching, rather than discovering a
