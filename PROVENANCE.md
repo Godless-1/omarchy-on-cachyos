@@ -105,11 +105,18 @@ Listed because a provenance page that claims a clean run would be worth less tha
 | `verify-reboot-safety.sh` searched `/boot` at depth 2 for `initramfs*.img` | The kernel-install layout is `/boot/<token>/<kernel>/initramfs` — no extension, one level deeper — so it found nothing and still reported PASS on exit code alone | Searches both layouts |
 | The same script then grepped `lsinitcpio -a` for a `Hooks` line | No such line exists for a systemd initramfs; it reported four confident failures on an intact machine | Checks for `systemd-cryptsetup` and `cryptsetup.target` instead, per init style |
 | It judged every image on disk, including orphaned entry directories | Stale images from an old machine-id will always lack what the live ones have | Scoped to the active entry token; orphans reported, not judged |
+| `--rebuild`'s post-rebuild check kept the broken `lsinitcpio -a` method | Section 3 had been fixed and section 8 left behind; it would have falsely reported DO NOT REBOOT after a good rebuild | Both call one shared `check_image()` |
+| `omarchy-window` reported "KDE shortcuts yield to Omarchy" having installed nothing | Missing `qdbus` set a variable nothing read, and returned success | Returns failure, and says what to do |
+| The verifier printed "Safe to reboot" when checks had been skipped | A warning usually means a check could not run at all | Separates "no failures" from "everything ran" |
+| A filed upstream bug report had the wrong root cause | `fakeroot` fakes uid 0, so it triggered a libalpm path the real program never takes; `strace` showed zero such syscalls | Retracted and closed the same day, with the reasoning error explained |
+| Advised restoring `/etc/os-release` by symlinking it | CachyOS keeps its identity in an unowned file edited in place, so that produced plain Arch branding | Uses the distribution's own branding script |
+| 64 makepkg build artefacts were committed | `git add -A` after building in the repo; CI then rebuilt a stale extracted tree instead of the tagged tarball | `.gitignore` covers them, with a comment on why it matters |
+| `grep -c . \|\| echo 0` broke the diagnostics' arithmetic | `grep -c` prints 0 *and* exits 1, so the fallback appended a second 0 | Uses `\|\| true` and a default |
 
 The pattern worth noting: most were caught by *running the thing*, which is why the dry-run
 and verification steps exist at all.
 
-The last three deserve emphasis, because they are the worst kind. The verification script —
+Three of these deserve emphasis, because they are the worst kind. The verification script —
 the one whose entire job is to be trustworthy about whether a machine still boots — was wrong
 twice, and both times it failed **loudly and confidently** rather than quietly. It reported
 `PASS` while silently skipping its most important check, and later reported four failures on a
@@ -135,12 +142,16 @@ this page would be worth less if this section were missing.
 
 | Path | Status |
 | --- | --- |
+| The ten diagnostics | **Tested.** `test/test-diagnose.sh` injects each fault into a fake system tree and asserts it is caught; a healthy tree must report nothing. Runs in CI |
+| Every script, statically | **Linted.** `shellcheck` at `-S style`, pinned to one version, in CI |
+| The package | **Built in CI** in an Arch container, asserting all eight commands reach `/usr/bin` |
 | `install-omarchy-on-cachyos.sh` | **Exercised.** Dry-run plus real runs, including two failed pacman transactions that were diagnosed and fixed |
-| `verify-reboot-safety.sh` | **Exercised heavily.** Four runs; two of its own bugs found and fixed that way |
-| `omarchy-window --bare` | **Exercised.** Launched nested, sized to the work area |
+| `verify-reboot-safety.sh` | **Exercised heavily.** Four runs; three of its own bugs found that way |
+| `omarchy-window --bare` | **Exercised.** Launched nested, sized to the work area, keybindings confirmed working |
 | `block-omarchy-updates.sh` (install path) | **Exercised.** All four binaries guarded, `NoExtract` present, originals stashed |
+| `preserve-cachyos-identity.sh --apply` | **Exercised.** Branding restored and confirmed with fastfetch |
 | `clean-stale-boot-entries.sh --archive` | **Exercised once**, on one machine |
-| `uninstall-omarchy-on-cachyos.sh` | **Never run.** Written and syntax-checked only |
+| `uninstall-omarchy-on-cachyos.sh` | **Never run.** Written, linted, syntax-checked only |
 | `block-omarchy-updates.sh --undo` | **Never run** |
 | `OMARCHY_ALLOW_DANGEROUS=1` override | **Never run** |
 | `clean-stale-boot-entries.sh --delete` | **Never run** |

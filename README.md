@@ -22,6 +22,7 @@ both — without letting Omarchy near your bootloader, your initramfs, or your r
 <a href="LICENSES/AGPL-3.0-or-later.txt"><img src="docs/badges/code.svg" alt="Code licensed AGPL-3.0-or-later"></a>
 <a href="LICENSES/CC-BY-SA-4.0.txt"><img src="docs/badges/docs.svg" alt="Documentation licensed CC BY-SA 4.0"></a>
 <a href="PROVENANCE.md"><img src="docs/badges/provenance.svg" alt="Build provenance disclosed"></a>
+<a href="https://github.com/Godless-1/omarchy-on-cachyos/actions/workflows/ci.yml"><img src="https://github.com/Godless-1/omarchy-on-cachyos/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
 
 ---
 
@@ -44,8 +45,17 @@ makepkg -si          # optional: puts the commands on your PATH
 omarchy-on-cachyos   # or ./omarchy-on-cachyos without installing
 ```
 
-That opens a menu showing what is and isn't set up on your system, and runs everything from
-one place. Every entry is also a standalone script if you prefer them directly.
+That opens a menu showing what is and isn't set up, **and what is wrong**. It checks ten
+conditions — boot-critical drop-ins, missing guards, the pacman deadlock, hijacked branding,
+pending migrations, orphaned `/boot` directories — explains each in plain language, and offers
+to fix the ones that have a fix.
+
+```bash
+omarchy-on-cachyos check    # diagnose only; exit 0 means healthy
+omarchy-on-cachyos fix      # diagnose, then choose what to repair
+```
+
+Every entry is also a standalone script if you prefer them directly.
 
 | Property | What to expect |
 | --- | --- |
@@ -233,6 +243,31 @@ where you are.
 
 ---
 
+## When something goes wrong
+
+*Every failure tells you how to undo it. You should never have to guess.*
+
+Each script prints numbered recovery steps at the point of failure, with the literal commands
+to run. `verify-reboot-safety.sh` additionally collects them into its verdict, so a fix cannot
+scroll off the screen, and adds a general escalation path:
+
+1. Re-run the check — it is read-only without `--rebuild`
+2. Restore the pre-install config from the timestamped backup the installer made
+3. `./uninstall-omarchy-on-cachyos.sh`
+4. Boot a pre-install snapshot from your boot menu
+
+The backups live in `~/.local/share/omarchy-cachyos/backup-<timestamp>/` and hold your
+`pacman.conf`, `mkinitcpio.conf`, the drop-in directory, your package list and your kernel
+cmdline.
+
+> [!NOTE]
+> The one failure that matters most — a missing `sd-encrypt` on a LUKS root — is caught
+> **before** anything reboots, and your existing initramfs on disk is untouched at that point.
+> The install aborts, tells you not to reboot, and prints the restore commands. You are safe
+> as long as you do not run `mkinitcpio` before fixing it.
+
+---
+
 ## Commands
 
 *Each runs on its own; the menu is only a front end.*
@@ -250,6 +285,9 @@ instead and the file names in the second column are what you call.
 | `omarchy-oc-verify-boot` | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
 | `omarchy-oc-clean-boot` | [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<token>/` dirs. `--archive`, `--delete` |
 | `omarchy-oc-uninstall` | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse the install. `--keep-apps` |
+
+`omarchy-on-cachyos` also takes `status`, `check`, `fix` and `install-desktop` as arguments,
+so it scripts as well as it menus.
 
 An already-open shell caches command lookups: `hash -r` in bash, `rehash` in zsh. fish picks
 them up on its own.
@@ -281,6 +319,27 @@ gracefully elsewhere.
 Developed against **Omarchy 4.0.2** on **CachyOS**, with a LUKS root on btrfs, limine and
 snapper, a greetd-based greeter, and more than one GPU. Other bases should work; the guards
 are written defensively and the verifier will tell you the truth either way.
+
+## Tests
+
+*Because a health checker that has only met healthy systems is untested.*
+
+```bash
+./test/test-diagnose.sh
+```
+
+Every filesystem probe in the diagnostics routes through a `_p()` helper that prefixes
+`OC_ROOT` when set. The suite builds fake system trees, injects one fault at a time, and
+asserts it is caught — including a healthy tree that must report nothing, because a detector
+that never returns "clean" is as useless as one that never fires. No root, no containers, no
+risk to the machine running it.
+
+[CI](.github/workflows/ci.yml) runs these on every push, alongside `shellcheck` at its
+strictest severity (pinned to one version, so CI and your laptop cannot disagree), a package
+build in an Arch container that asserts every command actually reaches `/usr/bin`, and a
+REUSE licensing check.
+
+---
 
 ## Accessibility and theming
 
