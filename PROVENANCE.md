@@ -28,15 +28,12 @@ No part of this was generated unattended. No part of it was committed unread.
 
 | Task | Done by |
 | --- | --- |
-| Chose the goal, and revised it as the research changed what was possible | Human |
-| Ran every `sudo` command | Human |
-| Ran the scripts and returned their output | Human |
-| Approved each destructive step, and ran the force-push | Human |
-| **Found defects by inspection** — see below | Human |
-| Raised the privacy concern, and named details that should not be published | Human |
-| Decided the final framing of the two run modes | Human |
-| Chose the licence, repository visibility, and commit identity | Human |
-| Authenticated to GitHub | Human |
+| Set the goal and the framing, revising both as research changed what was possible | Human |
+| Ran every privileged command, and returned the output | Human |
+| Approved each destructive step | Human |
+| **Caught defects in work already called finished** — see below | Human |
+| Raised the privacy concern, and named what should not be published | Human |
+| Chose the licence, visibility and commit identity; authenticated to GitHub | Human |
 | Read Omarchy's packages and scripts | Model |
 | Identified the boot hazards | Model |
 | Wrote the scripts and documentation | Model |
