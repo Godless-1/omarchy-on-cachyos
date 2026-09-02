@@ -170,6 +170,42 @@ runs the command in place, so it inherits the nested compositor. Hyprland's
 children inherit that `PATH`, so it covers a terminal you open by hand as well as
 anything the bindings start.
 
+### Two more ways out, both closed
+
+`uwsm-app` is not the only escape route.
+
+**`systemd-run --user`.** `omarchy-launch-browser` spells the launch
+`systemd-run --user … uwsm-app -- firefox`, so the unit is created, carrying the user
+manager's environment, before the `uwsm-app` shim is ever consulted. It gets a shim too.
+
+That one has a sharp edge: Omarchy also schedules
+`systemd-run --user --on-active=2s systemctl poweroff`. Running *that* in place instead of
+handing it to systemd would power the machine off immediately rather than in two seconds. So
+the shim passes through anything resembling a timer, a scope, a tty or another machine, and
+only takes over a plain `--user` service launch. It also decides before it shifts anything,
+because bailing out mid-parse would drop `--user` and turn a user unit into a system one.
+
+**The browser is single-instance.** Even with a perfect environment, a browser already
+running on the host opens its new window there: a second invocation just signals the first,
+and that process is connected to the host's compositor. No environment can move a window
+that was never created here.
+
+The cure is a genuinely separate instance, which needs a separate profile. It lives in the
+project's own data directory, never inside the browser's, so nothing you already have is
+touched or migrated:
+
+```
+~/.local/share/omarchy-cachyos/browser/<browser>
+```
+
+It starts empty, with its own logins. `--shared-browser` turns it off and accepts that
+browser windows land on the host session.
+
+Omarchy's launcher reads `Exec=` from the `.desktop` file and runs the **absolute** path
+(`/usr/lib/firefox/firefox`), which no `PATH` shim can intercept, so the launcher itself is
+shimmed rather than the browser binary. A bare-name shim is installed too, for when you type
+`firefox` in a terminal inside the session.
+
 The shim only models `uwsm-app -- <command>`, which is the form all 31 call sites
 use. Anything else — options that take a separate value, where guessing would
 `exec` the *value* as a command — is handed to the real `uwsm-app` rather than

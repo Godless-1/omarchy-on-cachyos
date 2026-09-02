@@ -12,6 +12,9 @@
 #   omarchy-window --bare       # menu + bar, but no host-session env import
 #   omarchy-window -s 1400x800  # explicit size, skips the KWin rule
 #   omarchy-window --no-rule    # don't touch KWin rules
+#   omarchy-window --shared-browser
+#                               # let browser windows open on the host session
+#                               # instead of on this session's own profile
 #
 # Close the window to end the session. SUPER+ESCAPE opens Omarchy's system menu;
 # SUPER+W closes a window inside it. SUPER+K lists every binding.
@@ -99,11 +102,12 @@ except Exception:
   done
 }
 
-SIZE=""; MODE=full; USE_RULE=1; DETACH=0; INSTALL_DESKTOP=0; GRAB_KEYS=1
+SIZE=""; MODE=full; USE_RULE=1; DETACH=0; INSTALL_DESKTOP=0; GRAB_KEYS=1; OWN_BROWSER=1
 while (($#)); do
   case "$1" in
     # Internal: run the watchdog for an already-started compositor.
     --watch-close) watch_for_close "${2:?--watch-close needs a pid}"; exit 0 ;;
+    --shared-browser) OWN_BROWSER=0; shift ;;
     --bare) MODE=bare; shift ;;
     --no-rule) USE_RULE=0; shift ;;
     --no-key-grab) GRAB_KEYS=0; shift ;;
@@ -327,6 +331,141 @@ SHIM
 sed -i "s|@REAL_UWSM@|$REAL_UWSM|" "$SHIMDIR/uwsm-app"
 chmod +x "$SHIMDIR/uwsm-app"
 
+# systemd-run is a second way out of this compositor, and uwsm-app's shim never
+# sees it: omarchy-launch-browser spells the launch
+#   systemd-run --user ... uwsm-app -- firefox
+# so the unit is created - carrying the *user manager's* environment, meaning
+# the host session's - before the PATH shim is ever consulted. Probed here it
+# hands the app WAYLAND_DISPLAY=wayland-0 and XDG_CURRENT_DESKTOP=KDE.
+REAL_SDRUN=$(command -v systemd-run 2>/dev/null || echo /usr/bin/systemd-run)
+cat > "$SHIMDIR/systemd-run" <<'SHIM'
+#!/bin/sh
+# Installed by omarchy-window for one nested session. Not a system file.
+
+# TIMERS MUST NEVER BE INTERCEPTED. Omarchy schedules
+#   systemd-run --user --on-active=2s systemctl poweroff
+# and running that here instead of handing it to systemd would power the machine
+# off immediately rather than in two seconds. Anything that smells of a timer,
+# a scope, a tty or another machine goes straight to the real thing.
+for a in "$@"; do
+  case "$a" in
+    --on-*|--timer-*|--scope|--pty|--wait|--machine|--machine=*|--system|-t|-M*|-H*)
+      exec @REAL_SDRUN@ "$@" ;;
+  esac
+done
+
+# Only a plain --user service launch is ours to take over.
+case " $* " in
+  *" --user "*) ;;
+  *) exec @REAL_SDRUN@ "$@" ;;
+esac
+
+# Decide first, without shifting, so a hand-over passes the ORIGINAL arguments.
+# Shifting first and then bailing out drops --user, and the real systemd-run
+# would build a SYSTEM unit from what was meant to be a user one.
+#
+# Only forms that cannot swallow a separate value are recognised. Anything else
+# goes to the real systemd-run rather than risk exec'ing an option's value as a
+# command. Once the command has started, its own arguments are not ours to judge.
+seen=0
+for a in "$@"; do
+  [ "$seen" = 1 ] && continue
+  case "$a" in
+    --) seen=1 ;;
+    --user|--quiet|-q|--collect|-G|--same-dir|-d|--no-ask-password) ;;
+    --*=*) ;;
+    -*) exec @REAL_SDRUN@ "$@" ;;
+    *) seen=1 ;;
+  esac
+done
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --) shift; break ;;
+    --user|--quiet|-q|--collect|-G|--same-dir|-d|--no-ask-password) shift ;;
+    --*=*) shift ;;
+    *) break ;;
+  esac
+done
+[ "$#" -gt 0 ] || exit 0
+exec "$@"
+SHIM
+sed -i "s|@REAL_SDRUN@|$REAL_SDRUN|g" "$SHIMDIR/systemd-run"
+chmod +x "$SHIMDIR/systemd-run"
+
+# Even with the environment fixed, a browser already running on the host opens
+# its new window there: it is single-instance, so a second invocation just
+# signals the first, and that process is connected to the host's compositor. No
+# environment can move a window that was never created here.
+#
+# The only cure is a genuinely separate instance, which means a separate
+# profile. This one lives with the project's own data, never inside the
+# browser's, so nothing you already have is touched or migrated - it starts
+# empty, with its own logins. --shared-browser turns it off and accepts that
+# browser windows land on the host.
+if (( OWN_BROWSER )); then
+  bdesktop=$(env -u BROWSER xdg-settings get default-web-browser 2>/dev/null || true)
+  [[ -n $bdesktop ]] || bdesktop=$(xdg-mime query default x-scheme-handler/https 2>/dev/null || true)
+  bexec=""
+  for d in "$HOME/.local/share/applications" /usr/share/applications; do
+    [[ -n $bdesktop && -f "$d/$bdesktop" ]] || continue
+    bexec=$(sed -n 's/^Exec=\([^ ]*\).*/\1/p' "$d/$bdesktop" | head -1)
+    [[ -n $bexec ]] && break
+  done
+  bname=$(basename "${bexec:-}")
+  breal=$(command -v "$bname" 2>/dev/null || true)
+  bprofile="${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/browser/$bname"
+  bflags=""
+  case "$bname" in
+    firefox | firefox-* | librewolf | floorp | waterfox | zen-browser)
+      bflags="--new-instance --profile" ;;
+    chromium | google-chrome | google-chrome-* | brave | brave-browser | vivaldi | vivaldi-stable | microsoft-edge*)
+      bflags="--user-data-dir" ;;
+  esac
+  if [[ -n $breal && -n $bflags ]]; then
+    mkdir -p "$bprofile"
+    if [[ $bflags == "--user-data-dir" ]]; then
+      isolate=$(printf -- '--user-data-dir=%q' "$bprofile"); priv="--incognito"
+    else
+      isolate=$(printf -- '--new-instance --profile %q' "$bprofile"); priv="--private-window"
+    fi
+
+    # A bare-name shim catches `firefox` typed in a terminal here.
+    printf '#!/bin/sh\n# omarchy-window: this session'"'"'s browser, on its own profile.\nexec %q %s "$@"\n' \
+      "$breal" "$isolate" > "$SHIMDIR/$bname"
+    chmod +x "$SHIMDIR/$bname"
+
+    # ...but Omarchy's own launcher reads Exec= out of the .desktop file and runs
+    # the ABSOLUTE path (/usr/lib/firefox/firefox), which no PATH shim can catch.
+    # So shim the launcher itself, which *is* found on PATH. It also drops the
+    # systemd-run and uwsm-app wrappers, both of which would hand the browser the
+    # host session's environment.
+    cat > "$SHIMDIR/omarchy-launch-browser" <<'BSHIM'
+#!/bin/sh
+# Installed by omarchy-window for one nested session. Not a system file.
+# This session's browser, on its own profile, in this compositor.
+#
+# Rotate the arguments so Omarchy's own --private is translated the way its
+# launcher would, and everything else is passed through untouched.
+n=$#; i=0
+while [ "$i" -lt "$n" ]; do
+  a=$1; shift
+  if [ "$a" = "--private" ]; then set -- "$@" @PRIV@; else set -- "$@" "$a"; fi
+  i=$((i + 1))
+done
+exec @BROWSER@ @ISOLATE@ "$@"
+BSHIM
+    sed -i -e "s|@PRIV@|$priv|" -e "s|@BROWSER@|$(printf '%q' "$breal")|" \
+           -e "s|@ISOLATE@|$isolate|" "$SHIMDIR/omarchy-launch-browser"
+    chmod +x "$SHIMDIR/omarchy-launch-browser"
+    BROWSER_NOTE="$bname runs on its own profile, so its windows open in here"
+  elif [[ -n $breal ]]; then
+    # Known browser, unknown isolation flag: say so rather than silently let
+    # the window open on the host and look like a bug.
+    BROWSER_NOTE="$bname has no known profile flag; its windows may open on your host session"
+  fi
+fi
+
 # One handler, armed before anything that can exit early. A second
 # `trap ... EXIT` silently replaces the first, which is how the temporary config
 # directory used to leak on every run.
@@ -370,6 +509,7 @@ echo "Omarchy nested window: ${SIZE}"
 [[ -n ${FITTED:-} ]] && echo "  sized to: $FITTED"
 [[ -n ${RULED:-} ]] && echo "  KWin rule installed (exact position, no titlebar)"
 echo "  mode: $MODE"
+[[ -n ${BROWSER_NOTE:-} ]] && echo "  browser: $BROWSER_NOTE"
 echo
 if [[ -n ${KEYS:-} ]]; then
   echo "  keys: $KEYS"
