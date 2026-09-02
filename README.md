@@ -25,50 +25,43 @@ both — without letting Omarchy near your bootloader, your initramfs, or your r
 
 ---
 
-## At a glance
+## Start here
 
-**What it does.** Installs Omarchy 4 and gives you two ways to run it. You get both from a
-single install; neither is a fallback for the other.
+*What this is, in thirty seconds.*
 
-| Mode | What you get |
-| --- | --- |
-| **As a login session** | Omarchy appears in your greeter next to the desktop you already use. Log out, pick it, and you are in the real thing, full-screen, on your hardware. Set up automatically — there is nothing to enable. |
-| **In a window** | The same desktop — bar, launcher, keybindings, theming — running in an ordinary window on your current session, sized to your screen minus your panels. Same machine, same filesystem, so there is no VM, no container, and nothing to share. Your files are already there. |
+[Omarchy](https://omarchy.org) is a complete Hyprland desktop, shipped as pacman packages.
+Those packages assume they own the machine: installed as-is on a system that already has a
+desktop, they rewrite your initramfs, your bootloader entries and your package repositories.
+On a LUKS-encrypted root that means **your root filesystem stops unlocking**.
 
-**Why not just install Omarchy directly.** Omarchy's packages assume they own the
-machine. Unguarded, they rewrite your initramfs hooks, your bootloader entries, and your
-package repositories. On a LUKS-encrypted root, that means **root stops unlocking**.
+This repository installs Omarchy with those behaviours fenced off, and gives you two ways to
+run it — in a window, or as a login session — plus a script that proves your machine still boots.
 
-**What this adds.** Guards that survive `pacman -Syu`, a hard gate that aborts mid-install if
-your encryption hook has vanished, and a verifier that proves you can still boot.
+```bash
+git clone https://github.com/Godless-1/omarchy-on-cachyos.git
+cd omarchy-on-cachyos
+./omarchy-on-cachyos
+```
+
+That opens a menu showing what is and isn't set up on your system, and runs everything from
+one place. Every entry is also a standalone script if you prefer them directly.
 
 | Property | What to expect |
 | --- | --- |
 | Time | ~10 minutes plus download |
 | Download | ~750 MB (`--minimal` is much less) |
 | Touches your bootloader | **No** — guarded |
-| Touches your initramfs hooks | **No** — guarded, and verified after |
+| Touches your initramfs hooks | **No** — guarded, and verified afterwards |
 | Touches your repositories | Adds one, ordered **last**, so it never overrides yours |
-| Your existing desktop | Untouched — still there, still your default if you prefer |
+| Touches your distro's branding | **No** — restored and pinned |
+| Your existing desktop | Untouched, and still selectable at login |
 | Reversible | Yes — uninstaller, config backups, and a bootable snapshot |
 | Needs a reboot | No — a logout for the session, nothing at all for the window |
-
-**The whole flow, start to finish:**
-
-```bash
-./install-omarchy-on-cachyos.sh --dry-run   # changes nothing, needs no sudo
-./install-omarchy-on-cachyos.sh             # the real thing
-./block-omarchy-updates.sh                  # fence off two destructive commands
-./verify-reboot-safety.sh                   # prove the machine still boots
-```
-
-Then log out and pick **Omarchy (Hyprland uwsm)**. Not ready to hand over your whole
-session? Run [`./omarchy-window`](#two-ways-to-run-it) and get the desktop in a window instead.
 
 > [!CAUTION]
 > On a LUKS-encrypted system, installing Omarchy's packages **unguarded** can leave you unable
 > to unlock your root filesystem. Read [The three hazards](#the-three-hazards) before running
-> anything — even if you decide not to use these scripts.
+> anything — including if you decide not to use these scripts.
 
 ---
 
@@ -90,6 +83,8 @@ session? Run [`./omarchy-window`](#two-ways-to-run-it) and get the desktop in a 
 
 ## Two ways to run it
 
+*Both come from one install. Neither is a fallback for the other.*
+
 ### As a login session
 
 The installer registers Omarchy in your greeter's session list, always — there is no flag to
@@ -102,22 +97,24 @@ an uninstall.
 
 ### In a window on your current session
 
-Hyprland's Aquamarine backend runs nested when `WAYLAND_DISPLAY` is set. So you can run the
-whole Omarchy desktop **in a window on your existing session** — same machine, same
-filesystem, nothing to share:
+Hyprland's Aquamarine backend runs nested when `WAYLAND_DISPLAY` is set, so the whole Omarchy
+desktop can run **in a window on the session you are already using** — same machine, same
+filesystem, nothing to share between them:
 
 ```bash
 ./omarchy-window --bare
 ```
 
-It queries KWin for the real work area (your screen minus panels), sizes the nested output to
-match exactly, and installs a KWin rule so it lands there with no titlebar.
+It asks KWin for your real work area (screen minus panels), sizes the nested output to match
+exactly, and pins it there with no titlebar. `--install-desktop` adds a launcher entry with
+an Omarchy icon so it starts from your application menu with no terminal behind it.
+
+While that window is focused, your desktop's global shortcuts step aside so Omarchy's
+keybindings work — and come straight back when you focus something else.
 
 `--bare` skips Omarchy's `systemctl --user import-environment`, which would otherwise
-overwrite `WAYLAND_DISPLAY` in your **host** session — while still starting the Omarchy shell
-so the menu (<kbd>Super</kbd>+<kbd>Space</kbd>) and bar work.
-
-This is the gentlest way to learn Hyprland's keybindings.
+overwrite `WAYLAND_DISPLAY` in your **host** session, while still starting the Omarchy shell
+so the menu and bar work.
 
 | Key | Action |
 | --- | --- |
@@ -128,29 +125,10 @@ This is the gentlest way to learn Hyprland's keybindings.
 
 ---
 
-## What this is
-
-Omarchy 4 is no longer an install script — it ships as **pacman packages** (`omarchy`,
-`omarchy-settings`) in its own signed repo, and it installs a session file:
-
-```ini
-Exec=uwsm start -g -1 -e -D Hyprland hyprland.desktop
-```
-
-That means Omarchy can live in your greeter's session list **next to Plasma**, and you pick
-one at login.
-
-The catch is that those packages assume they own the machine. On an existing Arch/CachyOS
-install they will reconfigure your initramfs, your bootloader, and your package repositories.
-This repo installs Omarchy **with those specific behaviours fenced off**, and gives you a way
-to verify your machine still boots afterwards.
-
----
-
 ## The three hazards
 
-Omarchy ships system configuration that is correct for Omarchy and wrong for a host that
-already has its own. These are the three that actually matter.
+*What Omarchy's packages do to a host that already has its own configuration. Worth reading
+even if you install Omarchy by hand instead.*
 
 ### 1. It replaces your initramfs hook list
 
@@ -174,8 +152,8 @@ On a systemd-initramfs system this swaps `sd-encrypt` → `encrypt` and
 | LUKS unlock | `sd-encrypt` — works | `encrypt` — **cannot parse `rd.luks.uuid=`** |
 | Snapshot boot | `sd-btrfs-overlayfs` — works | `btrfs-overlayfs` — **broken** |
 
-Result: root does not unlock, and booting a snapshot breaks. Verified empirically, not
-theorised.
+Root does not unlock, and booting a snapshot breaks in the same stroke. Verified empirically,
+not theorised — the method is in [docs/hazards.md](docs/hazards.md).
 
 ### 2. It hijacks your boot entries
 
@@ -185,72 +163,58 @@ and rewrites `BOOT_ORDER`.
 
 ### 3. Two commands delete your repositories
 
-`omarchy-refresh-pacman` does exactly this:
+`omarchy-refresh-pacman` overwrites `/etc/pacman.conf` and your mirrorlist with Omarchy's,
+then runs `pacman -Syyuu`. On CachyOS that removes `cachyos-v3`, `cachyos-core-v3`,
+`cachyos-extra-v3` and anything else you added, and force-downgrades every optimised package.
+`omarchy-channel-set` and `omarchy-reinstall-pkgs` both call it.
 
-```bash
-sudo cp -f "$OMARCHY_PATH/default/pacman/pacman-$channel.conf" /etc/pacman.conf
-sudo cp -f "$OMARCHY_PATH/default/pacman/mirrorlist-$channel"  /etc/pacman.d/mirrorlist
-sudo env OMARCHY_UPDATE_PACMAN=1 pacman -Syyuu --noconfirm
-```
-
-On CachyOS that removes `cachyos-v3`, `cachyos-core-v3`, `cachyos-extra-v3` and anything else
-you had, then force-downgrades every optimised package. `omarchy-channel-set` and
-`omarchy-reinstall-pkgs` both call it.
-
-`omarchy-update` is a separate problem: it runs `omarchy-migrate`, and migrations are
-*upgrade paths from older Omarchy versions*. A package-based install never marks them
-complete, so all of them are pending — including one that disables `sshd`.
-See [docs/migrations.md](docs/migrations.md).
+`omarchy-update` is a different problem: it runs `omarchy-migrate`, and a package-based
+install never marks the shipped migrations complete, so all of them are pending — including
+one that disables `sshd`. See [docs/migrations.md](docs/migrations.md).
 
 ---
 
 ## How it protects you
+
+*The mechanisms, and their one real limitation.*
 
 | Mechanism | Protects against |
 | --- | --- |
 | `NoExtract` in `pacman.conf` | Hazards 1 and 2, **durably** — survives package updates |
 | Hard gate after install | Aborts with *DO NOT REBOOT* if `sd-encrypt` has vanished |
 | Binary guards plus `NoExtract` | Hazard 3, from every shell, both sessions, and the Omarchy menu |
-| Snapper snapshot and backups | Rollback if anything else surprises you |
 | A `PostTransaction` hook of our own | The `etc-overrides` script, which `NoExtract` cannot reach |
+| Snapper snapshot and backups | Rollback if anything else surprises you |
 
 `NoExtract` is the key idea: pacman never extracts those paths, so the protection **survives
 `pacman -Syu`** instead of being undone by the next update.
 
 > [!WARNING]
 > `NoExtract` blocks package *extraction*. It cannot block a package's **post-install
-> script**, and `omarchy-settings` has one that copies `etc-overrides/` into `/etc`.
-> Five files land that way regardless. They are documented and none are boot-critical —
-> see [docs/how-it-works.md](docs/how-it-works.md#etc-overrides).
+> script**, and `omarchy-settings` has one that copies `etc-overrides/` into `/etc` —
+> replacing your `os-release`, Plymouth theme and fastfetch config. That is what
+> [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) is for: it restores them and
+> installs a hook that restores them again after every Omarchy update.
 
 ---
 
 ## Install
 
+*The full sequence, if you would rather not use the menu.*
+
 > [!IMPORTANT]
 > Read [The three hazards](#the-three-hazards) first. Then dry-run. Then install.
 
 ```bash
-git clone https://github.com/Godless-1/omarchy-on-cachyos.git
-cd omarchy-on-cachyos
-./install-omarchy-on-cachyos.sh --dry-run
+./install-omarchy-on-cachyos.sh --dry-run   # changes nothing, needs no sudo
+./install-omarchy-on-cachyos.sh             # the real thing
+./block-omarchy-updates.sh                  # fence off the destructive commands
+./preserve-cachyos-identity.sh --apply      # keep your distro's name and theming
+./verify-reboot-safety.sh                   # prove the machine still boots
 ```
 
-The dry run needs no `sudo` and changes nothing. When you're happy:
-
-```bash
-./install-omarchy-on-cachyos.sh
-```
-
-Then make the destructive commands unrunnable, and verify you can still boot:
-
-```bash
-./block-omarchy-updates.sh
-./verify-reboot-safety.sh
-```
-
-Log out and pick **Omarchy (Hyprland uwsm)** at your greeter. Plasma is untouched, and
-always one logout away.
+Then log out and pick **Omarchy (Hyprland uwsm)**, or run `./omarchy-window --bare` to stay
+where you are.
 
 ### What the installer actually does
 
@@ -268,12 +232,13 @@ always one logout away.
 
 ---
 
----
-
 ## Scripts
+
+*Each runs on its own; the menu is only a front end.*
 
 | Script | Purpose |
 | --- | --- |
+| [`omarchy-on-cachyos`](omarchy-on-cachyos) | **Menu fronting everything below.** `status` prints state and exits |
 | [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
 | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse it. `--keep-apps` |
 | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
@@ -283,6 +248,8 @@ always one logout away.
 | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme and fastfetch. `--apply`, `--undo` |
 
 ## Documentation
+
+*Longer form, one topic each.*
 
 - **[The hazards, in full](docs/hazards.md)** — what each one does and why the guard works
 - **[How it works](docs/how-it-works.md)** — packaging, `NoExtract`, `etc-overrides`
@@ -296,6 +263,8 @@ always one logout away.
 ---
 
 ## Requirements
+
+*What this expects of your system.*
 
 Arch or an Arch derivative with a working desktop session, `pacman`, `curl`, `bsdtar`,
 `python3`, and internet access. The nested window also needs a Wayland session;
