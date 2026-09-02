@@ -12,8 +12,12 @@
 #   ./preserve-cachyos-identity.sh                 # report only
 #   ./preserve-cachyos-identity.sh --apply         # restore + install the hook
 #   ./preserve-cachyos-identity.sh --undo          # remove the hook, keep Omarchy's
-#   ./preserve-cachyos-identity.sh --branding      # only re-do the Omarchy session's
-#                                                  # About and screensaver art (no sudo)
+#   ./preserve-cachyos-identity.sh --branding      # OPTIONAL, opt-in: also put your
+#                                                  # distro's logo in Omarchy's own
+#                                                  # About window and screensaver.
+#                                                  # Not done by --apply: inside
+#                                                  # Omarchy, Omarchy should look
+#                                                  # like Omarchy.
 #
 #   PLYMOUTH_THEME=cachyos-bootanimation ./preserve-cachyos-identity.sh --apply
 
@@ -55,12 +59,15 @@ printf '      plymouth     : %s\n' "$(plymouth-set-default-theme 2>/dev/null || 
 printf '      fastfetch cfg: %s\n' "$(pacman -Qoq /etc/fastfetch/config.jsonc 2>/dev/null || echo 'unowned/absent')"
 printf '      identity hook: %s\n' "$(test -f "$HOOK" && echo installed || echo 'not installed')"
 
-# --- 5. the session's own branding -----------------------------------------
-# The system files above are what `fastfetch` and the boot splash read. Inside
-# Omarchy there is a second, separate set: its About window and its screensaver
-# read ASCII art from ~/.config/omarchy/branding, which still says Omarchy no
-# matter what /etc/os-release says. These are per-user files, so no sudo, and
-# Omarchy itself treats them as user content (`omarchy branding about ...`).
+# --- optional: put your logo inside Omarchy too -----------------------------
+# NOT part of --apply, on purpose. The system files above are global - they are
+# what fastfetch, the boot splash and every distro-detection script read, and
+# they should say what the distribution actually is. Omarchy's About window and
+# screensaver are different: they are Omarchy's own furniture, inside Omarchy,
+# and Omarchy should look like itself there.
+#
+# So this is opt-in, for people who want their distribution's logo in those two
+# places as well. --branding does it, --undo puts Omarchy's back.
 #
 # Nothing here is destructive: Omarchy's originals are copied aside first and
 # --undo puts them back byte for byte. A copy of what we generated is kept too,
@@ -162,7 +169,7 @@ if [[ $MODE == report ]]; then
   if [[ -f $BRAND_STATE/applied/about.txt ]] && cmp -s "$BRAND_STATE/applied/about.txt" "$BRAND_DIR/about.txt"; then
     echo "      About and screensaver show this distribution"
   elif [[ -d $BRAND_DIR ]]; then
-    echo "      About and screensaver still show Omarchy's own art"
+    echo "      About and screensaver show Omarchy's own art (the default)"
   else
     echo "      not present on this machine"
   fi
@@ -254,9 +261,6 @@ Exec = $HELPER
 HOOKEOF
 echo "      $HOOK"
 echo "      $HELPER"
-
-log "Re-branding the Omarchy session's About and screensaver"
-apply_session_branding
 
 cat <<EOF
 

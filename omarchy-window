@@ -22,6 +22,8 @@
 set -euo pipefail
 
 SELF=$(readlink -f "$0")
+UPDATER=$(command -v omarchy-oc-update 2>/dev/null || true)
+[[ -n $UPDATER ]] || UPDATER="$(dirname "$SELF")/update-omarchy-on-cachyos.sh"
 
 # --- end the session when its window is closed ------------------------------
 # Hyprland does not exit when its last output goes away. Closing the nested
@@ -509,6 +511,13 @@ echo "Omarchy nested window: ${SIZE}"
 [[ -n ${FITTED:-} ]] && echo "  sized to: $FITTED"
 [[ -n ${RULED:-} ]] && echo "  KWin rule installed (exact position, no titlebar)"
 echo "  mode: $MODE"
+# Cache only, so this cannot add a millisecond to startup or fail the launch if
+# GitHub is unreachable. The refresh below runs detached, for next time.
+if [[ -x $UPDATER ]]; then
+  upd=$("$UPDATER" --notify 2>/dev/null || true)
+  [[ -n ${upd:-} ]] && printf '  update: %s\n' "$upd"
+  setsid "$UPDATER" --refresh >/dev/null 2>&1 < /dev/null &
+fi
 [[ -n ${BROWSER_NOTE:-} ]] && echo "  browser: $BROWSER_NOTE"
 echo
 if [[ -n ${KEYS:-} ]]; then

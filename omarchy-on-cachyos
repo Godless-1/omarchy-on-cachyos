@@ -7,8 +7,22 @@
 #   omarchy-on-cachyos            # menu
 #   omarchy-on-cachyos status     # print state and exit
 #   omarchy-on-cachyos check      # diagnose problems and exit (0 = healthy)
+#   omarchy-on-cachyos updates    # is a newer release of THIS project out?
+#   omarchy-on-cachyos update     # download that release and install it
 #   omarchy-on-cachyos fix        # diagnose, then offer to fix each finding
 #   omarchy-on-cachyos install-desktop   # add it to your application menu
+#
+# Every standalone script is also a subcommand, spelled either way. Arguments
+# pass straight through (ooc block-updates --dry-run):
+#   ooc install            the guarded installer
+#   ooc uninstall          reverse the install
+#   ooc block-updates      fence off the destructive Omarchy commands
+#   ooc verify-boot        prove this machine still boots
+#   ooc preserve-identity  keep your distribution's name and boot splash
+#   ooc clean-boot         reclaim orphaned /boot directories
+#   ooc window             Omarchy in a window
+#   ooc shortcuts          the borrowed-keys helper
+#   ooc updates / update   is a newer release of THIS project out, and install it
 #
 # Every action is a script in this directory, runnable on its own. The menu
 # echoes the command it runs before running it; nothing is hidden behind it.
@@ -469,12 +483,29 @@ EOF
   note "  It will appear in your application menu as \"Omarchy on CachyOS\"."
 }
 
-case "${1:-}" in
+# Every standalone script is reachable from here, spelled either way: `ooc
+# block-updates` and `ooc --block-updates` both run block-omarchy-updates.sh.
+# Remaining arguments pass straight through, so `ooc block-updates --dry-run`
+# behaves exactly as the script does on its own.
+sub="${1:-}"; sub="${sub#--}"
+case "$sub" in
   status) status; exit 0 ;;
-  install-desktop|--install-desktop) install_desktop; exit 0 ;;
+  install-desktop) install_desktop; exit 0 ;;
   check)  diagnose; show_issues; exit $(( ${#ISSUES[@]} > 0 )) ;;
   fix)    fix_flow; exit 0 ;;
-  -h|--help) sed -n '5,13p' "$0" | sed 's/^# \?//'; exit 0 ;;
+  update) shift; exec "$HERE/update-omarchy-on-cachyos.sh" --install "$@" ;;
+  updates|check-update) shift; exec "$HERE/update-omarchy-on-cachyos.sh" "$@" ;;
+  install)           shift; exec "$HERE/install-omarchy-on-cachyos.sh" "$@" ;;
+  uninstall)         shift; exec "$HERE/uninstall-omarchy-on-cachyos.sh" "$@" ;;
+  block-updates)     shift; exec "$HERE/block-omarchy-updates.sh" "$@" ;;
+  verify-boot)       shift; exec "$HERE/verify-reboot-safety.sh" "$@" ;;
+  preserve-identity) shift; exec "$HERE/preserve-cachyos-identity.sh" "$@" ;;
+  clean-boot)        shift; exec "$HERE/clean-stale-boot-entries.sh" "$@" ;;
+  window)            shift; exec "$HERE/omarchy-window" "$@" ;;
+  shortcuts)         shift; exec "$HERE/omarchy-window-shortcuts" "$@" ;;
+  h|help|-h) sed -n '5,24p' "$0" | sed 's/^# \?//'; exit 0 ;;
+  "") ;;
+  *) echo "unknown command: $1" >&2; echo "try: ooc help" >&2; exit 1 ;;
 esac
 
 have_gum || note "gum is not installed - falling back to a plain menu."

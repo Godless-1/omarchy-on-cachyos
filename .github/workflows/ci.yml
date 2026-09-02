@@ -59,6 +59,8 @@ jobs:
         run: ./test/test-systemd-run-shim.sh
       - name: Run the browser shim test suite
         run: ./test/test-browser-shim.sh
+      - name: Run the update-check test suite
+        run: ./test/test-update-check.sh
 
   package:
     name: makepkg + namcap
@@ -89,7 +91,7 @@ jobs:
                    omarchy-oc-install \
                    omarchy-oc-uninstall omarchy-oc-block-updates \
                    omarchy-oc-verify-boot omarchy-oc-preserve-identity \
-                   omarchy-oc-clean-boot; do
+                   omarchy-oc-clean-boot omarchy-oc-update; do
             grep -qx "usr/bin/$c" <<<"$list" && echo "ok  usr/bin/$c" \
               || { echo "::error::missing usr/bin/$c"; exit 1; }
           done

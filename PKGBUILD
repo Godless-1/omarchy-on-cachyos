@@ -3,7 +3,7 @@
 # Maintainer: Godless-1 <19769978+Godless-1@users.noreply.github.com>
 
 pkgname=omarchy-on-cachyos
-pkgver=1.4.3.3
+pkgver=1.4.3.4
 pkgrel=1
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
@@ -55,6 +55,7 @@ _cmds=(
   'omarchy-oc-verify-boot:verify-reboot-safety.sh'
   'omarchy-oc-preserve-identity:preserve-cachyos-identity.sh'
   'omarchy-oc-clean-boot:clean-stale-boot-entries.sh'
+  'omarchy-oc-update:update-omarchy-on-cachyos.sh'
 )
 
 package() {

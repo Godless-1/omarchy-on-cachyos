@@ -304,6 +304,7 @@ instead and the file names in the second column are what you call.
 | `omarchy-oc-preserve-identity` | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme, fastfetch and the Omarchy session's own art. `--apply`, `--branding`, `--undo` |
 | `omarchy-oc-verify-boot` | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
 | `omarchy-oc-clean-boot` | [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<token>/` dirs. `--archive`, `--delete` |
+| `omarchy-oc-update` | [`update-omarchy-on-cachyos.sh`](update-omarchy-on-cachyos.sh) | Is a newer release out, and install it. `--notify`, `--refresh`, `--install`, `--no-restart` |
 | `omarchy-oc-uninstall` | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse the install. `--keep-apps` |
 
 `omarchy-on-cachyos` also takes `status`, `check`, `fix` and `install-desktop` as arguments,
@@ -312,31 +313,55 @@ so it scripts as well as it menus.
 An already-open shell caches command lookups: `hash -r` in bash, `rehash` in zsh. fish picks
 them up on its own.
 
-## Your distribution's identity
+## Staying current
 
-Omarchy replaces distribution identity in **two separate places**, and they need different
-handling.
-
-**The system files.** `/etc/os-release`, the Plymouth theme and the fastfetch config are what
-`fastfetch`, the boot splash and every distro-detection script read. `omarchy-settings` has a
-post-install script that overwrites them, and `NoExtract` cannot stop a script. So these are
-restored and pinned by a pacman hook that re-asserts them after every Omarchy upgrade.
-
-**The session's own art.** Inside Omarchy there is a second set that the system files do not
-touch: its About window and its screensaver read ASCII art from
-`~/.config/omarchy/branding`. Those still said Omarchy no matter what `/etc/os-release` said.
+A nested window mentions it when a newer release of **this project** is out. It says so in
+those words, because an unqualified "update available" inside an Omarchy window would read
+as an Omarchy update, or a system one.
 
 ```bash
-omarchy-oc-preserve-identity --branding    # re-do just the session art, no sudo
+ooc updates    # what you have, what is out
+ooc update     # download that release and hand it to pacman
 ```
 
-It renders your own distribution's logo, read from `os-release` and its icon rather than
-hardcoded, so it works the same on Arch or anywhere else. Omarchy's originals are copied
-aside first and `--undo` puts them back byte for byte.
+Nothing installs itself. The check that runs at window start **never touches the network**:
+it reads a cache and refreshes it in the background, at most once a day, so it cannot add a
+millisecond to startup and cannot stop a window opening when GitHub is unreachable. Every
+failure is silent, and `--notify` exits 0 whatever it finds.
 
-There is no pacman hook for this half, deliberately: these are per-user files, and a hook
-runs as root with no reliable idea of whose home to write to. So an update that overwrites
-them is **detected and offered** instead, by `ooc check`, alongside everything else.
+`ooc update` downloads the release package, prints its name, version and SHA-256, refuses
+anything that is not this package, and hands it to `pacman`, which asks for your password.
+Sessions still running the old code are then closed - each returning your borrowed shortcuts
+as it goes - and one is reopened on the new version. `--no-restart` leaves them alone.
+
+Turn the whole thing off with `export OMARCHY_OC_NO_UPDATE_CHECK=1`, or
+`touch ~/.config/omarchy-cachyos/no-update-check`.
+
+
+## Who looks like what
+
+Omarchy replaces distribution identity in two places, and they deserve opposite answers.
+
+**The system files stay yours.** `/etc/os-release`, the Plymouth theme and the fastfetch
+config are global: they are what every terminal, the boot splash and every distro-detection
+script read, and they should say what the distribution actually is. `omarchy-settings` has a
+post-install script that overwrites them, and `NoExtract` cannot stop a script, so these are
+restored and pinned by a pacman hook that re-asserts them after every Omarchy upgrade.
+
+**Omarchy's own windows stay Omarchy's.** Its About window and screensaver read ASCII art
+from `~/.config/omarchy/branding`. That is Omarchy's own furniture, inside Omarchy, and it is
+left exactly as Omarchy ships it. Nothing here touches it.
+
+The two never cross: those files are read only by `omarchy-*` commands, so they cannot
+surface in your host desktop, and the pacman hook means an Omarchy update cannot make your
+host desktop claim to be Omarchy.
+
+If you *want* your distribution's logo in Omarchy's About window too, that is opt-in and
+reversible, and deliberately not part of `--apply`:
+
+```bash
+ooc preserve-identity --branding    # opt in; --undo puts Omarchy's back
+```
 
 
 ## Release names
