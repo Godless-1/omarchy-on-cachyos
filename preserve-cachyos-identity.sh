@@ -16,6 +16,7 @@
 #   PLYMOUTH_THEME=cachyos-bootanimation ./preserve-cachyos-identity.sh --apply
 
 set -euo pipefail
+# shellcheck source=/dev/null   # /etc/os-release is a runtime file, not shipped source
 
 MODE=report
 THEME="${PLYMOUTH_THEME:-cachyos}"
@@ -33,9 +34,19 @@ esac; done
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
-die()  { printf '\033[1;31mXX\033[0m  %s\n' "$*" >&2; exit 1; }
+die() {
+  local msg="$1"; shift
+  printf '\n\033[1;31mXX\033[0m  %s\n' "$msg" >&2
+  if (( $# )); then
+    printf '\n    \033[1mHow to recover:\033[0m\n' >&2
+    printf '      %s\n' "$@" >&2
+  fi
+  printf '\n' >&2
+  exit 1
+}
 
 log "Current identity"
+# shellcheck source=/dev/null  # runtime file, not shipped source
 printf '      os-release   : %s\n' "$(. /etc/os-release; echo "${PRETTY_NAME:-?} (ID=${ID:-?})")"
 printf '      /etc/os-release is a %s\n' "$(test -L /etc/os-release && echo 'symlink -> package file' || echo 'regular file')"
 printf '      plymouth     : %s\n' "$(plymouth-set-default-theme 2>/dev/null || echo '?')"
@@ -46,9 +57,9 @@ if [[ $MODE == report ]]; then
   echo; log "Report only. Re-run with --apply."; exit 0
 fi
 
-(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed."
-sudo -v || die "sudo required"
-[[ -x $BRANDING ]] || die "$BRANDING not found - this script targets CachyOS"
+(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
+sudo -v || die "sudo required" "Nothing has been changed." "To see current state without sudo:  $0"
+[[ -x $BRANDING ]] || die "$BRANDING not found - this script targets CachyOS" "Nothing has been changed." "On another distribution, restore identity with your own tooling, then" "adapt the PostTransaction hook this script installs (see the source)." "Your os-release right now:  grep PRETTY_NAME /etc/os-release"
 
 if [[ $MODE == undo ]]; then
   log "Removing the identity hook"
@@ -67,6 +78,7 @@ if [[ -L /etc/os-release ]]; then
   echo "      replaced symlink with a real file (cachyos-branding edits in place)"
 fi
 sudo "$BRANDING" os-release
+# shellcheck source=/dev/null  # runtime file, not shipped source
 echo "      now: $(. /etc/os-release; echo "$PRETTY_NAME (ID=$ID)")"
 
 # --- 2. plymouth ------------------------------------------------------------
@@ -77,7 +89,7 @@ if [[ -d /usr/share/plymouth/themes/$THEME ]]; then
   echo "      NOTE: takes effect at the next initramfs rebuild."
 else
   warn "theme '$THEME' not installed; leaving as-is"
-  echo "      available: $(ls /usr/share/plymouth/themes | tr '\n' ' ')"
+  echo "      available: $(find /usr/share/plymouth/themes -mindepth 1 -maxdepth 1 -type d -printf '%f ' 2>/dev/null)"
 fi
 
 # --- 3. fastfetch -----------------------------------------------------------

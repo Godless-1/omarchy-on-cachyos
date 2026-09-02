@@ -31,14 +31,23 @@ done
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
-die()  { printf '\033[1;31mXX\033[0m  %s\n' "$*" >&2; exit 1; }
+die() {
+  local msg="$1"; shift
+  printf '\n\033[1;31mXX\033[0m  %s\n' "$msg" >&2
+  if (( $# )); then
+    printf '\n    \033[1mHow to recover:\033[0m\n' >&2
+    printf '      %s\n' "$@" >&2
+  fi
+  printf '\n' >&2
+  exit 1
+}
 
-(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed."
-sudo -v || die "sudo required"
+(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
+sudo -v || die "sudo required" "Nothing has been changed."
 
 TOKEN=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null) \
-  || die "cannot determine the active entry token"
-[[ -n $TOKEN ]] || die "active entry token is empty - refusing to guess"
+  || die "cannot determine the active entry token" "Nothing has been changed - refusing to guess which /boot entries are live." "Check by hand:  cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id"
+[[ -n $TOKEN ]] || die "active entry token is empty - refusing to guess" "Nothing has been changed." "An empty token means every /boot/<hex>/ directory would look orphaned." "Check:  cat /etc/machine-id"
 log "Active entry token: $TOKEN"
 
 # A candidate is a 32-hex-char directory under /boot that is not the active token

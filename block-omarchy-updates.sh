@@ -30,7 +30,16 @@ TARGETS=(
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
-die()  { printf '\033[1;31mXX\033[0m  %s\n' "$*" >&2; exit 1; }
+die() {
+  local msg="$1"; shift
+  printf '\n\033[1;31mXX\033[0m  %s\n' "$msg" >&2
+  if (( $# )); then
+    printf '\n    \033[1mHow to recover:\033[0m\n' >&2
+    printf '      %s\n' "$@" >&2
+  fi
+  printf '\n' >&2
+  exit 1
+}
 
 is_guard() { [[ -f $1 ]] && grep -q "$MARKER" "$1" 2>/dev/null; }
 
@@ -50,8 +59,8 @@ case "${1:-}" in
   --status) status; exit 0 ;;
 esac
 
-(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed."
-sudo -v || die "sudo required"
+(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
+sudo -v || die "sudo required" "Nothing has been changed." "To inspect the current state without sudo:  $0 --status"
 
 # ------------------------------------------------------------------- undo
 if [[ ${1:-} == "--undo" ]]; then
@@ -192,7 +201,7 @@ for p in usr/bin/omarchy-update usr/bin/omarchy-refresh-pacman \
     echo "  added: $p"
   fi
 done
-grep -q '^NoExtract = usr/bin/omarchy-update$' "$PACCONF" || die "NoExtract insertion failed"
+grep -q '^NoExtract = usr/bin/omarchy-update$' "$PACCONF" || die "NoExtract insertion failed - the guards are not in place" "The binaries may already be guarded but pacman would restore them on update." "Undo cleanly:  $0 --undo" "Then check pacman.conf is intact:  pacman-conf >/dev/null && echo ok"
 
 echo
 log "Blocked. Current state:"

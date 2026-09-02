@@ -4,11 +4,14 @@
 #
 # One entry point for everything in this repository.
 #
-#   ./omarchy-on-cachyos            # menu
-#   ./omarchy-on-cachyos status     # print state and exit
+#   omarchy-on-cachyos            # menu
+#   omarchy-on-cachyos status     # print state and exit
+#   omarchy-on-cachyos check      # diagnose problems and exit (0 = healthy)
+#   omarchy-on-cachyos fix        # diagnose, then offer to fix each finding
+#   omarchy-on-cachyos install-desktop   # add it to your application menu
 #
-# Every action is a script in this directory, runnable on its own. Nothing here
-# is hidden behind the menu.
+# Every action is a script in this directory, runnable on its own. The menu
+# echoes the command it runs before running it; nothing is hidden behind it.
 
 set -uo pipefail
 HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
@@ -18,7 +21,12 @@ RED="#f7768e";  ORANGE="#ff9e64"; MUTED="#9aa5ce"; FG="#c0caf5"
 
 have_gum() { command -v gum >/dev/null 2>&1; }
 
-# Plain-text equivalents so the script still works without gum installed.
+# Test hook. Unset in normal use, so _p is the identity function and every path
+# below is the real one. Setting OC_ROOT to a directory lets the test suite build
+# a fake system tree and exercise every branch without bubblewrap or root.
+: "${OC_ROOT:=}"
+_p() { printf '%s%s' "$OC_ROOT" "$1"; }
+
 if have_gum; then
   head()  { gum style --foreground "$FG" --border rounded --border-foreground "$PURPLE" \
               --padding "0 2" --margin "1 0 0 0" --align center --width 62 "$@"; }
@@ -30,11 +38,11 @@ else
   head()  { printf '\n== %s ==\n' "$*"; }
   note()  { printf '   %s\n' "$*"; }
   good()  { printf '   [ok] %s\n' "$*"; }
-  bad()   { printf '   [--] %s\n' "$*"; }
-  warny() { printf '   [!!] %s\n' "$*"; }
+  bad()   { printf '   [!!] %s\n' "$*"; }
+  warny() { printf '   [--] %s\n' "$*"; }
 fi
 
-yes_no() {  # yes_no "question" -> 0 if confirmed
+yes_no() {
   if have_gum; then
     gum confirm --prompt.foreground "$FG" \
       --selected.background "$BLUE" --selected.foreground "#1a1b26" "$1"
@@ -43,7 +51,221 @@ yes_no() {  # yes_no "question" -> 0 if confirmed
   fi
 }
 
-# ---------------------------------------------------------------- state
+# ============================================================== diagnosis
+# Each finding is  severity \t id \t headline \t what-it-means \t fix-command
+# An empty fix-command means "no automatic fix; the headline explains".
+ISSUES=()
+add() { ISSUES+=("$1"$'\t'"$2"$'\t'"$3"$'\t'"$4"$'\t'"$5"); }
+
+diagnose() {
+  ISSUES=()
+  local installed=0
+  if [[ -n $OC_ROOT ]]; then [[ -e $(_p /INSTALLED) ]] && installed=1
+  else pacman -Qq omarchy &>/dev/null && installed=1; fi
+
+  # --- boot-critical -------------------------------------------------
+  if [[ -e "$(_p /etc/mkinitcpio.conf.d/omarchy_hooks.conf)" ]]; then
+    add CRITICAL hooks \
+      "Omarchy's initramfs drop-in is present" \
+      "It replaces your HOOKS wholesale. On a LUKS root this swaps sd-encrypt for the busybox encrypt hook, and your root would stop unlocking at the next initramfs rebuild. Your current initramfs is still fine - this only bites on the next rebuild." \
+      "$HERE/block-omarchy-updates.sh"
+  fi
+  if compgen -G "$(_p /etc/limine-entry-tool.d/omarchy-*)" >/dev/null 2>&1; then
+    add CRITICAL limine \
+      "Omarchy's bootloader drop-ins are present" \
+      "They switch you to UKI booting, rename your OS entry and rewrite the boot order." \
+      "sudo rm -f /etc/limine-entry-tool.d/omarchy-*.conf"
+  fi
+
+  # --- protection gaps -----------------------------------------------
+  if (( installed )) && ! grep -q 'omarchy-on-cachyos guards' "$(_p /etc/pacman.conf)" 2>/dev/null; then
+    add HIGH guards \
+      "The pacman NoExtract guards are missing" \
+      "Nothing is stopping the next Omarchy package update from reinstalling the boot-critical files above." \
+      "$HERE/install-omarchy-on-cachyos.sh"
+  fi
+  if (( installed )) && [[ -f "$(_p /usr/bin/omarchy-update)" ]] \
+     && ! grep -q 'OMARCHY-BLOCKED-GUARD' "$(_p /usr/bin/omarchy-update)" 2>/dev/null; then
+    add HIGH blocked \
+      "omarchy-update and omarchy-refresh-pacman are runnable" \
+      "omarchy-refresh-pacman replaces /etc/pacman.conf and would delete your distribution's repositories. omarchy-update runs migrations written for a different system." \
+      "$HERE/block-omarchy-updates.sh"
+  fi
+  if [[ -f "$(_p /usr/share/libalpm/hooks/00-omarchy-update-guard.hook)" ]]; then
+    add HIGH pacmanhook \
+      "Omarchy's pacman hook is blocking plain 'pacman -Syu'" \
+      "It aborts every direct upgrade and tells you to run 'omarchy update', which this project blocks. Left alone, the two deadlock and you cannot update at all." \
+      "$HERE/block-omarchy-updates.sh"
+  fi
+  # The vault bug: stashed originals that are symlinks resolving back to the guard.
+  local vault; vault=$(_p /usr/local/share/omarchy-blocked); local v
+  if [[ -d $vault ]]; then
+    for v in "$vault"/*; do
+      [[ -L $v ]] || continue
+      if grep -q 'OMARCHY-BLOCKED-GUARD' "$(readlink -f "$v")" 2>/dev/null; then
+        add MEDIUM vault \
+          "A stashed original is a symlink pointing at the guard" \
+          "--undo would restore a guard over a guard, leaving the command permanently blocked. Re-running the blocker repairs the stash." \
+          "$HERE/block-omarchy-updates.sh"
+        break
+      fi
+    done
+  fi
+
+  # --- identity -------------------------------------------------------
+  if (( installed )); then
+    local id ply
+    # shellcheck source=/dev/null  # runtime file, not shipped source
+    id=$(. "$(_p /etc/os-release)" 2>/dev/null; echo "${ID:-}")
+    ply=$(plymouth-set-default-theme 2>/dev/null || echo "")
+    if [[ $id == omarchy || $ply == omarchy || -f "$(_p /etc/fastfetch/config.jsonc)" ]]; then
+      if [[ ! -f "$(_p /usr/share/libalpm/hooks/99-restore-distro-identity.hook)" ]]; then
+        add MEDIUM identity \
+          "Omarchy has taken over your distribution's branding" \
+          "os-release, the Plymouth theme and/or the fastfetch config now say Omarchy. Cosmetic, but it also confuses distro-detection scripts. NoExtract cannot prevent it because a post-install script writes them." \
+          "$HERE/preserve-cachyos-identity.sh --apply"
+      fi
+    fi
+  fi
+
+  # --- migrations ------------------------------------------------------
+  if (( installed )) && command -v omarchy-migrate >/dev/null 2>&1; then
+    # grep -c prints 0 AND exits 1 when nothing matches, so `|| echo 0` would
+    # append a second 0 and break the arithmetic below.
+    local pending
+    pending=$(omarchy-migrate --pending 2>/dev/null | grep -c . || true)
+    pending=${pending:-0}
+    if (( pending > 0 )); then
+      add MEDIUM migrations \
+        "$pending Omarchy migration(s) are pending" \
+        "These are upgrade steps from older Omarchy versions. A package-based install has nothing to migrate from, and running them would apply changes meant for a different system - one disables sshd. A real first install marks them all complete." \
+        "mark-migrations"
+    fi
+  fi
+
+  # --- convenience ------------------------------------------------------
+  if (( installed )) && [[ ! -e "$(_p /usr/share/wayland-sessions/omarchy.desktop)" ]]; then
+    add LOW session \
+      "The Omarchy session is not offered at login" \
+      "Your greeter reads /usr/share/wayland-sessions. Without this you can still use the window, but cannot log into Omarchy." \
+      "sudo ln -sfn /usr/local/share/wayland-sessions/omarchy.desktop /usr/share/wayland-sessions/omarchy.desktop"
+  fi
+  if (( installed )) && [[ ! -f "$HOME/.local/share/applications/omarchy-window.desktop" ]]; then
+    add LOW launcher \
+      "No application-menu entry for the windowed desktop" \
+      "Adds an icon so it launches from your menu with no terminal behind it." \
+      "$HERE/omarchy-window --install-desktop"
+  fi
+  local token orphan
+  token=$(cat "$(_p /etc/kernel/entry-token)" 2>/dev/null || cat "$(_p /etc/machine-id)" 2>/dev/null)
+  if [[ -n $token ]]; then
+    for orphan in "$(_p /boot)"/*/; do
+      local b; b=$(basename "$orphan")
+      [[ ${#b} == 32 && $b != "$token" ]] || continue
+      add LOW boot \
+        "An orphaned /boot entry directory is taking up space" \
+        "Left by a previous install under a different machine-id. Never booted, never updated. The cleaner checks your bootloader does not reference it before touching anything, and archives rather than deletes." \
+        "$HERE/clean-stale-boot-entries.sh --archive"
+      break
+    done
+  fi
+}
+
+sev_colour() { case "$1" in CRITICAL|HIGH) bad "$2";; MEDIUM) warny "$2";; *) note "$2";; esac; }
+
+show_issues() {
+  local sev id headline detail fix i=0
+  if (( ${#ISSUES[@]} == 0 )); then
+    good "  Nothing to fix. Every check passed."
+    return 0
+  fi
+  echo
+  while IFS=$'\t' read -r sev id headline detail fix; do
+    i=$((i+1))
+    sev_colour "$sev" "  [$sev] $headline"
+    printf '         %s\n' "$detail" | fold -s -w 72 | sed '2,$s/^/         /'
+    [[ -n $fix ]] && note "         fix: ${fix/#$HERE\//./}"
+    echo
+  done < <(printf '%s\n' "${ISSUES[@]}")
+  return 1
+}
+
+apply_fix() { # apply_fix <id> <fix>
+  local id="$1" fix="$2"
+  case "$fix" in
+    "") note "  no automatic fix for this one"; return 0 ;;
+    mark-migrations)
+      note "  \$ marking shipped migrations complete (what a first install does)"
+      local d="$HOME/.local/state/omarchy/migrations" m n=0
+      mkdir -p "$d"
+      for m in /usr/share/omarchy/migrations/*.sh; do
+        [[ -f $m ]] || continue; touch "$d/$(basename "$m")"; n=$((n+1))
+      done
+      good "  marked $n migration(s); omarchy-migrate --pending is now empty"
+      return 0 ;;
+    *)
+      note "  \$ $fix"
+      # shellcheck disable=SC2086
+      eval "$fix"   # fix strings are authored above, never user input
+      return $? ;;
+  esac
+}
+
+fix_flow() {
+  diagnose
+  if ! show_issues; then
+    local -a labels=() ids=() fixes=()
+    local sev id headline detail fix
+    while IFS=$'\t' read -r sev id headline detail fix; do
+      [[ -n $fix ]] || continue
+      labels+=("[$sev] $headline"); ids+=("$id"); fixes+=("$fix")
+    done < <(printf '%s\n' "${ISSUES[@]}")
+    (( ${#labels[@]} )) || { note "  Nothing here can be fixed automatically."; return 0; }
+
+    echo
+    note "  Each fix is one of this project's own scripts. They back up before they"
+    note "  change anything, and every one of them has an undo."
+    echo
+    local chosen
+    if have_gum; then
+      chosen=$(printf '%s\n' "${labels[@]}" | gum choose --no-limit \
+        --header "Space to select, Enter to apply (Esc to skip)" \
+        --header.foreground "$MUTED" --cursor.foreground "$BLUE" \
+        --selected.foreground "$GREEN") || return 0
+    else
+      echo "  Apply all fixes? [y/N]"; read -r a
+      [[ ${a,,} == y* ]] && chosen=$(printf '%s\n' "${labels[@]}") || return 0
+    fi
+    [[ -n $chosen ]] || { note "  Nothing selected."; return 0; }
+
+    local l ok_n=0 fail_n=0
+    while IFS= read -r l; do
+      local k
+      for k in "${!labels[@]}"; do
+        [[ ${labels[$k]} == "$l" ]] || continue
+        echo; head "${ids[$k]}"
+        if apply_fix "${ids[$k]}" "${fixes[$k]}"; then ok_n=$((ok_n+1)); good "  done"
+        else fail_n=$((fail_n+1)); bad "  that one did not complete - see the output above"; fi
+      done
+    done <<<"$chosen"
+
+    echo; head "Re-checking"
+    diagnose
+    if (( ${#ISSUES[@]} == 0 )); then
+      good "  All clear. Nothing outstanding."
+    else
+      note "  $ok_n applied, $fail_n failed, ${#ISSUES[@]} finding(s) remain:"
+      show_issues || true
+    fi
+    if (( ok_n > 0 )); then
+      echo; note "  Boot-related fixes only take effect at the next initramfs rebuild."
+      note "  Confirm you can still boot before rebooting:"
+      note "    ./verify-reboot-safety.sh"
+    fi
+  fi
+}
+
+# ============================================================== status
 st_installed=0; st_session=0; st_guards=0; st_blocked=0; st_identity=0; st_desktop=0
 detect() {
   pacman -Qq omarchy &>/dev/null && st_installed=1
@@ -53,50 +275,68 @@ detect() {
   [[ -f /usr/share/libalpm/hooks/99-restore-distro-identity.hook ]] && st_identity=1
   [[ -f "$HOME/.local/share/applications/omarchy-window.desktop" ]] && st_desktop=1
 }
-
-row() { # row <label> <0|1> <yes-text> <no-text>
+row() {
   local l="$1" v="$2" y="$3" n="$4"
   if (( v )); then good "$(printf '  %-22s %s' "$l" "$y")"
   else            warny "$(printf '  %-22s %s' "$l" "$n")"; fi
 }
 
 status() {
-  detect
+  # shellcheck source=/dev/null
+  detect; diagnose
   head "omarchy-on-cachyos"
   note ""
-  row "Omarchy packages"  "$st_installed" "installed"            "not installed"
-  row "Login session"     "$st_session"   "registered"           "not registered"
-  row "pacman guards"     "$st_guards"    "active"               "MISSING - boot at risk"
-  row "Destructive cmds"  "$st_blocked"   "blocked"              "runnable"
-  row "Distro identity"   "$st_identity"  "preserved"            "Omarchy's branding will return"
-  row "Window launcher"   "$st_desktop"   "installed"            "not installed"
+  row "Omarchy packages"  "$st_installed" "installed"   "not installed"
+  row "Login session"     "$st_session"   "registered"  "not registered"
+  row "pacman guards"     "$st_guards"    "active"      "missing"
+  row "Destructive cmds"  "$st_blocked"   "blocked"     "runnable"
+  row "Distro identity"   "$st_identity"  "preserved"   "not pinned"
+  row "Window launcher"   "$st_desktop"   "installed"   "not installed"
   note ""
+  # shellcheck source=/dev/null  # runtime file, not shipped source
   note "  $( . /etc/os-release 2>/dev/null; echo "${PRETTY_NAME:-unknown}" ) · plymouth: $(plymouth-set-default-theme 2>/dev/null || echo '?')"
+  note ""
+  local crit=0
+  if (( ${#ISSUES[@]} )); then
+    crit=$(printf '%s\n' "${ISSUES[@]}" | grep -c '^CRITICAL' || true)
+    crit=${crit:-0}
+  fi
+  if (( ${#ISSUES[@]} == 0 )); then
+    good "  No problems detected."
+  elif (( crit > 0 )); then
+    bad  "  ${#ISSUES[@]} finding(s), $crit critical. Choose 'Review and fix' below."
+  else
+    warny "  ${#ISSUES[@]} finding(s), none critical. Choose 'Review and fix' below."
+  fi
   note ""
 }
 
-run() { # run <script> [args...]
+run_script() {
   local s="$HERE/$1"; shift
   [[ -x $s ]] || { bad "missing: $s"; return 1; }
+  echo; note "  \$ ./$(basename "$s") $*"; echo
+  "$s" "$@"; local rc=$?
   echo
-  note "  \$ ./$(basename "$s") $*"
-  echo
-  "$s" "$@"
-  local rc=$?
-  echo
-  (( rc == 0 )) && good "  finished" || bad "  exited $rc"
+  if (( rc == 0 )); then good "  finished"
+  else
+    bad "  exited $rc"
+    note "  Nothing else has been changed. Re-run 'Review and fix' to see the current state,"
+    note "  or read the recovery steps the script printed above."
+  fi
   return $rc
 }
 
 pause() { echo; read -rsn1 -p "  press any key to return to the menu " _ ; echo; }
 
-# ---------------------------------------------------------------- menu
+# ============================================================== menu
 menu() {
   local choice
   local -a items=(
+    "Review and fix problems"
     "Status — show what is set up"
     "Open Omarchy in a window"
     "Install launcher entry (icon, no terminal)"
+    "Add this tool to my application menu"
     "Install Omarchy — dry run (changes nothing)"
     "Install Omarchy — for real"
     "Block the destructive commands"
@@ -108,9 +348,8 @@ menu() {
     "Quit"
   )
   if have_gum; then
-    choice=$(printf '%s\n' "${items[@]}" | gum choose --height 14 \
-      --header "What would you like to do?" \
-      --header.foreground "$MUTED" \
+    choice=$(printf '%s\n' "${items[@]}" | gum choose --height 15 \
+      --header "What would you like to do?" --header.foreground "$MUTED" \
       --cursor.foreground "$BLUE" --selected.foreground "$GREEN") || return 1
   else
     local i=1; for it in "${items[@]}"; do printf '  %2d) %s\n' "$i" "$it"; ((i++)); done
@@ -118,34 +357,68 @@ menu() {
   fi
 
   case "$choice" in
-    Status*)              status ;;
-    "Open Omarchy in a window")
-                          run omarchy-window --bare --detach ;;
-    "Install launcher entry"*)
-                          run omarchy-window --install-desktop ;;
-    *"dry run"*)          run install-omarchy-on-cachyos.sh --dry-run ;;
-    *"for real")          yes_no "Install Omarchy onto this system?" && \
-                          run install-omarchy-on-cachyos.sh ;;
-    "Block the destructive"*)
-                          run block-omarchy-updates.sh ;;
-    "Preserve this distro"*)
-                          yes_no "Restore and pin this distribution's branding?" && \
-                          run preserve-cachyos-identity.sh --apply ;;
-    "Verify I can still boot")
-                          run verify-reboot-safety.sh ;;
-    "Verify + rebuild"*)  yes_no "Regenerate the initramfs now?" && \
-                          run verify-reboot-safety.sh --rebuild ;;
-    "Reclaim orphaned"*)  run clean-stale-boot-entries.sh ;;
-    "Uninstall Omarchy")  yes_no "Remove Omarchy from this system?" && \
-                          run uninstall-omarchy-on-cachyos.sh ;;
-    Quit|"")              return 1 ;;
+    "Review and fix problems")   fix_flow ;;
+    Status*)                     status ;;
+    "Open Omarchy in a window")  run_script omarchy-window --bare --detach ;;
+    "Install launcher entry"*)   run_script omarchy-window --install-desktop ;;
+    "Add this tool to my"*)      install_desktop ;;
+    *"dry run"*)                 run_script install-omarchy-on-cachyos.sh --dry-run ;;
+    *"for real")                 yes_no "Install Omarchy onto this system?" && \
+                                 run_script install-omarchy-on-cachyos.sh ;;
+    "Block the destructive"*)    run_script block-omarchy-updates.sh ;;
+    "Preserve this distro"*)     yes_no "Restore and pin this distribution's branding?" && \
+                                 run_script preserve-cachyos-identity.sh --apply ;;
+    "Verify I can still boot")   run_script verify-reboot-safety.sh ;;
+    "Verify + rebuild"*)         yes_no "Regenerate the initramfs now?" && \
+                                 run_script verify-reboot-safety.sh --rebuild ;;
+    "Reclaim orphaned"*)         run_script clean-stale-boot-entries.sh ;;
+    "Uninstall Omarchy")         yes_no "Remove Omarchy from this system?" && \
+                                 run_script uninstall-omarchy-on-cachyos.sh ;;
+    Quit|"")                     return 1 ;;
   esac
   return 0
 }
 
+install_desktop() {
+  local self icon icondir appdir
+  self=$(readlink -f "$0")
+  icondir="$HOME/.local/share/icons/hicolor/scalable/apps"
+  appdir="$HOME/.local/share/applications"
+  mkdir -p "$icondir" "$appdir"
+  icon=omarchy-on-cachyos
+  if [[ -f $HERE/docs/icons/omarchy-on-cachyos.svg ]]; then
+    cp -f "$HERE/docs/icons/omarchy-on-cachyos.svg" "$icondir/$icon.svg"
+  elif [[ -f /usr/share/icons/hicolor/scalable/apps/omarchy-on-cachyos.svg ]]; then
+    : # already installed system-wide by the package
+  else
+    icon=utilities-terminal   # graceful fallback rather than a broken icon
+  fi
+  cat > "$appdir/omarchy-on-cachyos.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Omarchy on CachyOS
+GenericName=Omarchy setup and health checks
+Comment=Install, guard, verify and repair an Omarchy install alongside your desktop
+Exec=$self
+Icon=$icon
+Terminal=true
+Categories=System;Settings;PackageManager;
+Keywords=omarchy;hyprland;pacman;boot;initramfs;
+StartupNotify=false
+EOF
+  command -v gtk-update-icon-cache >/dev/null &&     gtk-update-icon-cache -qtf "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+  command -v update-desktop-database >/dev/null &&     update-desktop-database "$appdir" 2>/dev/null || true
+  good "  Installed $appdir/omarchy-on-cachyos.desktop"
+  note "  icon: $icon"
+  note "  It will appear in your application menu as \"Omarchy on CachyOS\"."
+}
+
 case "${1:-}" in
   status) status; exit 0 ;;
-  -h|--help) sed -n '4,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
+  install-desktop|--install-desktop) install_desktop; exit 0 ;;
+  check)  diagnose; show_issues; exit $(( ${#ISSUES[@]} > 0 )) ;;
+  fix)    fix_flow; exit 0 ;;
+  -h|--help) sed -n '5,13p' "$0" | sed 's/^# \?//'; exit 0 ;;
 esac
 
 have_gum || note "gum is not installed - falling back to a plain menu."

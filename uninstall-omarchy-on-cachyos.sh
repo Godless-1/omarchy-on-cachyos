@@ -16,18 +16,28 @@ esac; done
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
-run()  { if (( DRYRUN )); then printf '   [dry-run] %s\n' "$*"; else eval "$@"; fi; }
+# Execute an argument vector directly - no eval, so paths with spaces or globs
+# survive intact. run_to adds the one thing an array cannot express: redirection.
+run() {
+  if (( DRYRUN )); then printf '   [dry-run] %s\n' "$(printf '%q ' "$@")"
+  else "$@"; fi
+}
+run_to() {
+  local out="$1"; shift
+  if (( DRYRUN )); then printf '   [dry-run] %s > %s\n' "$(printf '%q ' "$@")" "$out"
+  else "$@" > "$out"; fi
+}
 
 (( EUID == 0 )) && { echo "Run as your normal user." >&2; exit 1; }
 sudo -v
 
 log "Removing the Omarchy session entry"
-run "sudo rm -f /usr/share/wayland-sessions/omarchy.desktop"
+run sudo rm -f /usr/share/wayland-sessions/omarchy.desktop
 
 if (( ! KEEP_APPS )); then
   log "Removing omarchy packages (leaving shared deps like hyprland/pipewire in place)"
   for p in omarchy omarchy-settings; do
-    pacman -Qq "$p" &>/dev/null && run "sudo pacman -Rns --noconfirm $p" || true
+    pacman -Qq "$p" &>/dev/null && run sudo pacman -Rns --noconfirm "$p" || true
   done
 else
   log "--keep-apps: leaving packages installed"
@@ -35,7 +45,7 @@ fi
 
 log "Removing the [omarchy] repo from /etc/pacman.conf"
 if grep -q '^\[omarchy\]' /etc/pacman.conf; then
-  run "sudo cp /etc/pacman.conf /etc/pacman.conf.pre-omarchy-removal"
+  run sudo cp /etc/pacman.conf /etc/pacman.conf.pre-omarchy-removal
   if (( ! DRYRUN )); then
     sudo awk '
       /^\[omarchy\]$/ { skip=1; next }
@@ -69,7 +79,7 @@ if (( ! DRYRUN )); then
 fi
 
 log "Refreshing package databases"
-run "sudo pacman -Sy"
+run sudo pacman -Sy
 
 cat <<EOF
 

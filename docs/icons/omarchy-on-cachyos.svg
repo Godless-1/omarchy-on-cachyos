@@ -1,0 +1,30 @@
+<!--
+SPDX-FileCopyrightText: 2026 Godless-1
+SPDX-License-Identifier: CC-BY-SA-4.0
+
+A desktop window containing a second, brighter one: Omarchy running inside the
+session you already use. The gradient frame is the guard around it.
+Deliberately few shapes so it stays legible at 24px in a panel.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-label="omarchy-on-cachyos">
+  <title>omarchy-on-cachyos</title>
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7aa2f7"/><stop offset="50%" stop-color="#bb9af7"/><stop offset="100%" stop-color="#f7768e"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="52" fill="#1a1b26"/>
+  <rect x="6" y="6" width="244" height="244" rx="47" fill="none" stroke="url(#frame)" stroke-width="10"/>
+  <!-- host window -->
+  <rect x="40" y="52" width="176" height="152" rx="14" fill="#24283b" stroke="#3b4261" stroke-width="4"/>
+  <rect x="40" y="52" width="176" height="26" rx="14" fill="#3b4261"/>
+  <rect x="40" y="66" width="176" height="12" fill="#3b4261"/>
+  <circle cx="58"  cy="65" r="5" fill="#f7768e"/>
+  <circle cx="76"  cy="65" r="5" fill="#ff9e64"/>
+  <circle cx="94"  cy="65" r="5" fill="#9ece6a"/>
+  <!-- nested Omarchy window -->
+  <rect x="74" y="100" width="108" height="76" rx="10" fill="#1a1b26" stroke="#7aa2f7" stroke-width="5"/>
+  <rect x="88" y="118" width="52" height="9" rx="4.5" fill="#9ece6a"/>
+  <rect x="88" y="136" width="80" height="9" rx="4.5" fill="#9aa5ce"/>
+  <rect x="88" y="154" width="34" height="9" rx="4.5" fill="#bb9af7"/>
+</svg>

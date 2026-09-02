@@ -14,11 +14,13 @@
 #   ./install-omarchy-on-cachyos.sh --dry-run  # show what would happen
 
 set -euo pipefail
+# shellcheck source=/dev/null   # /etc/os-release is a runtime file, not shipped source
 
 CHANNEL=stable
 REPO_URL="https://pkgs.omarchy.org/${CHANNEL}/\$arch"
 DB_URL="https://pkgs.omarchy.org/${CHANNEL}/x86_64"
 KEY_FPR="40DFB630FF42BCFFB047046CF0134EE680CAC571"
+SELF_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP="$HOME/.local/share/omarchy-cachyos/backup-$STAMP"
 MINIMAL=0
@@ -59,24 +61,44 @@ declare -a PKG_HEAVY=(
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
-die()  { printf '\033[1;31mXX\033[0m  %s\n' "$*" >&2; exit 1; }
-run()  { if (( DRYRUN )); then printf '   [dry-run] %s\n' "$*"; else eval "$@"; fi; }
+die() {
+  local msg="$1"; shift
+  printf '\n\033[1;31mXX\033[0m  %s\n' "$msg" >&2
+  if (( $# )); then
+    printf '\n    \033[1mHow to recover:\033[0m\n' >&2
+    printf '      %s\n' "$@" >&2
+  fi
+  printf '\n' >&2
+  exit 1
+}
+# Execute an argument vector directly - no eval, so paths with spaces or globs
+# survive intact. run_to adds the one thing an array cannot express: redirection.
+run() {
+  if (( DRYRUN )); then printf '   [dry-run] %s\n' "$(printf '%q ' "$@")"
+  else "$@"; fi
+}
+run_to() {
+  local out="$1"; shift
+  if (( DRYRUN )); then printf '   [dry-run] %s > %s\n' "$(printf '%q ' "$@")" "$out"
+  else "$@" > "$out"; fi
+}
 
 for arg in "$@"; do
   case "$arg" in
     --minimal) MINIMAL=1 ;;
     --dry-run) DRYRUN=1 ;;
     -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
-    *) die "unknown option: $arg" ;;
+    *) die "unknown option: $arg" "Valid options: --dry-run, --minimal" "See what it would do:  $0 --dry-run" ;;
   esac
 done
 
-(( EUID == 0 )) && die "Run as your normal user, not root. It will sudo where needed."
-command -v pacman >/dev/null || die "pacman not found"
-(( DRYRUN )) || sudo -v || die "sudo required"
+(( EUID == 0 )) && die "Run as your normal user, not root. It will sudo where needed." "Re-run without sudo:  $0 ${*:-}" "It needs your HOME to seed configs, which root does not have."
+command -v pacman >/dev/null || die "pacman not found - this only works on Arch and its derivatives" "Nothing has been changed."
+(( DRYRUN )) || sudo -v || die "sudo required" "Nothing has been changed." "To see what it would do without sudo:  $0 --dry-run"
 
 # ---------------------------------------------------------------- preflight
 log "Preflight"
+# shellcheck source=/dev/null  # runtime file, not shipped source
 . /etc/os-release
 [[ ${ID:-} == cachyos ]] || warn "Expected CachyOS, found '${ID:-unknown}'. Continuing."
 
@@ -90,20 +112,20 @@ fi
 
 mkdir -p "$BACKUP"
 log "Backing up to $BACKUP"
-run "cp -a /etc/pacman.conf '$BACKUP/pacman.conf'"
-run "cp -a /etc/pacman.d/mirrorlist '$BACKUP/mirrorlist'"
-run "cp -a /etc/mkinitcpio.conf '$BACKUP/mkinitcpio.conf'"
-run "cp -a /etc/mkinitcpio.conf.d '$BACKUP/mkinitcpio.conf.d'"
-run "pacman -Qqe > '$BACKUP/pkglist-explicit.txt'"
-run "pacman -Qq  > '$BACKUP/pkglist-all.txt'"
-run "cp /proc/cmdline '$BACKUP/cmdline.txt'"
+run cp -a /etc/pacman.conf "$BACKUP/pacman.conf"
+run cp -a /etc/pacman.d/mirrorlist "$BACKUP/mirrorlist"
+run cp -a /etc/mkinitcpio.conf "$BACKUP/mkinitcpio.conf"
+run cp -a /etc/mkinitcpio.conf.d "$BACKUP/mkinitcpio.conf.d"
+run_to "$BACKUP/pkglist-explicit.txt" pacman -Qqe
+run_to "$BACKUP/pkglist-all.txt" pacman -Qq
+run cp /proc/cmdline "$BACKUP/cmdline.txt"
 
 # btrfs + snapper: take a rollback point you can boot from limine.
 if (( DRYRUN )); then
   echo "   [dry-run] would create a snapper pre-install snapshot"
 elif command -v snapper >/dev/null && sudo snapper list-configs 2>/dev/null | grep -qw root; then
   log "Creating snapper pre-install snapshot"
-  run "sudo snapper -c root create -d 'pre-omarchy $STAMP'"
+  run sudo snapper -c root create -d "pre-omarchy $STAMP"
 else
   warn "No snapper 'root' config found; skipping snapshot."
 fi
@@ -129,7 +151,7 @@ else
   ' /etc/pacman.conf.stripped | sudo tee /etc/pacman.conf.new >/dev/null
   sudo mv /etc/pacman.conf.new /etc/pacman.conf
   sudo rm -f /tmp/.omarchy-guards /etc/pacman.conf.stripped
-  grep -q 'omarchy-on-cachyos guards' /etc/pacman.conf || die "guard insertion failed"
+  grep -q 'omarchy-on-cachyos guards' /etc/pacman.conf || die "guard insertion failed - refusing to continue without the NoExtract guards" "Nothing has been installed yet, so your system is unchanged." "Restore pacman.conf:  sudo cp $BACKUP/pacman.conf /etc/pacman.conf" "Then check it parses:  pacman-conf >/dev/null && echo ok"
   n=$(grep -c '^NoExtract = ' /etc/pacman.conf)
   log "$n NoExtract guard(s) active"
 fi
@@ -140,18 +162,18 @@ if ! (( DRYRUN )) && sudo pacman-key --list-keys "$KEY_FPR" &>/dev/null; then
   log "Key $KEY_FPR already trusted."
 else
   tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
-  curl -fsSL "$DB_URL/omarchy.db" -o "$tmp/omarchy.db" || die "cannot reach $DB_URL"
+  curl -fsSL "$DB_URL/omarchy.db" -o "$tmp/omarchy.db" || die "cannot reach $DB_URL" "Nothing has been installed. The guards are in place and harmless." "Check connectivity:  curl -I $DB_URL/omarchy.db" "If you use a VPN, try without it - throttled links time out here." "Remove the guards if you are abandoning the install:  ./block-omarchy-updates.sh --undo"
   bsdtar -xf "$tmp/omarchy.db" -C "$tmp"
   kdesc="$(find "$tmp" -maxdepth 2 -path '*omarchy-keyring-*/desc' | head -1)"
-  [[ -n $kdesc ]] || die "omarchy-keyring not found in repo db"
+  [[ -n $kdesc ]] || die "omarchy-keyring not found in the repo database" "Nothing has been installed." "The repo layout may have changed upstream. Check:  curl -s $DB_URL/omarchy.db | bsdtar -tf - | grep keyring"
   kfile="$(grep -A1 '^%FILENAME%$' "$kdesc" | tail -1)"
   log "Fetching $kfile"
-  curl -fsSL "$DB_URL/$kfile" -o "$tmp/$kfile" || die "keyring download failed"
-  run "sudo pacman -U --noconfirm '$tmp/$kfile'"
+  curl -fsSL "$DB_URL/$kfile" -o "$tmp/$kfile" || die "keyring download failed" "Nothing has been installed." "Retry, or fetch by hand:  curl -O $DB_URL/<keyring-file>"
+  run sudo pacman -U --noconfirm "$tmp/$kfile"
   if ! (( DRYRUN )); then
     sudo pacman-key --populate omarchy 2>/dev/null || true
     sudo pacman-key --list-keys "$KEY_FPR" &>/dev/null \
-      || die "Omarchy key $KEY_FPR not trusted after install - aborting rather than lowering SigLevel"
+      || die "Omarchy key $KEY_FPR not trusted after installing the keyring" "Aborting rather than lowering SigLevel to TrustAll, which would accept unsigned packages." "Inspect:  sudo pacman-key --list-keys | grep -A2 omarchy" "Remove the keyring and start over:  sudo pacman -Rns omarchy-keyring" "Nothing from the [omarchy] repo has been installed."
     log "Verified key $KEY_FPR"
   fi
 fi
@@ -168,11 +190,12 @@ else
       | sudo tee -a /etc/pacman.conf >/dev/null
   fi
 fi
-run "sudo pacman -Sy"
+run sudo pacman -Sy
 
 # ------------------------------------------------------------ install
 log "Installing the omarchy package (sddm assumed-installed: your display manager is kept)"
-run "sudo pacman -S --needed --noconfirm omarchy --assume-installed sddm --overwrite '/etc/skel/.config/alacritty/*'"
+run sudo pacman -S --needed --noconfirm omarchy --assume-installed sddm \
+      --overwrite '/etc/skel/.config/alacritty/*'
 
 # ---- HARD GATE: verify the boot guards actually held -------------------
 if ! (( DRYRUN )); then
@@ -193,7 +216,7 @@ if ! (( DRYRUN )); then
     echo "${HOOKS[*]}"' 2>/dev/null)"
   echo "    effective HOOKS: $eff_hooks"
   if (( ROOT_IS_LUKS )) && [[ $eff_hooks != *sd-encrypt* ]]; then
-    die "sd-encrypt missing from effective HOOKS. DO NOT REBOOT. Restore $BACKUP/mkinitcpio.conf.d"
+    die "sd-encrypt missing from effective HOOKS - your LUKS root would not unlock" "*** DO NOT REBOOT until this is resolved. ***" "1. Restore the hook drop-ins:" "     sudo cp -a $BACKUP/mkinitcpio.conf.d/. /etc/mkinitcpio.conf.d/" "     sudo cp $BACKUP/mkinitcpio.conf /etc/mkinitcpio.conf" "2. Find the culprit - a drop-in without a NN- prefix sorts last and can" "   replace HOOKS wholesale:  ls /etc/mkinitcpio.conf.d/" "3. Confirm the fix:  ./verify-reboot-safety.sh" "4. Your existing initramfs on disk is UNCHANGED and still bootable; this" "   only affects the next rebuild. You are safe as long as you do not run" "   mkinitcpio before fixing it." "5. Worst case, boot a pre-install snapshot from the limine menu."
   fi
   (( fail )) && warn "Guards had to be enforced manually - check pacman.conf NoExtract syntax."
   log "Boot configuration intact."
@@ -212,7 +235,7 @@ if [[ -r $PKGFILE ]]; then
     (( keep )) && want+=("$p")
   done
   log "Installing Omarchy userspace: ${#want[@]} packages (skipping: ${skip[*]})"
-  run "sudo pacman -S --needed --noconfirm ${want[*]}"
+  run sudo pacman -S --needed --noconfirm "${want[@]}"
 elif (( DRYRUN )); then
   echo "   [dry-run] $PKGFILE does not exist yet (it ships inside the omarchy package)."
   echo "   [dry-run] On the real run this installs the full Omarchy userspace"
@@ -223,8 +246,18 @@ fi
 
 # ------------------------------------------------ session entry
 log "Exposing the Omarchy session to your greeter"
-run "sudo mkdir -p /usr/share/wayland-sessions"
-run "sudo ln -sfn /usr/local/share/wayland-sessions/omarchy.desktop /usr/share/wayland-sessions/omarchy.desktop"
+run sudo mkdir -p /usr/share/wayland-sessions
+run sudo ln -sfn /usr/local/share/wayland-sessions/omarchy.desktop \
+      /usr/share/wayland-sessions/omarchy.desktop
+
+# ------------------------------------------------ application menu entries
+log "Adding application-menu entries"
+if [[ -x $SELF_DIR/omarchy-on-cachyos ]]; then
+  run "$SELF_DIR/omarchy-on-cachyos" install-desktop
+fi
+if [[ -x $SELF_DIR/omarchy-window ]]; then
+  run "$SELF_DIR/omarchy-window" --install-desktop
+fi
 
 # ------------------------------------------------ user config seeding
 log "Seeding your Omarchy user config (only files omarchy-settings owns)"
@@ -238,8 +271,8 @@ if pacman -Qq omarchy-settings &>/dev/null; then
     [[ -d $f ]] && continue
     rel="${f#/etc/skel/}"; dst="$HOME/$rel"
     if [[ -e $dst ]]; then kept+=("$rel"); continue; fi
-    run "mkdir -p '$(dirname "$dst")'"
-    run "cp -a '$f' '$dst'"
+    run mkdir -p "$(dirname "$dst")"
+    run cp -a "$f" "$dst"
     seeded=$((seeded+1))
   done < <( { pacman -Qlq omarchy-settings; pacman -Qlq omarchy; } 2>/dev/null \
               | grep '^/etc/skel/' | sort -u )
