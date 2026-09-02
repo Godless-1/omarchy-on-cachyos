@@ -31,6 +31,19 @@ run_to() {
 (( EUID == 0 )) && { echo "Run as your normal user." >&2; exit 1; }
 sudo -v
 
+# Do this before anything is removed. A nested window that was killed mid-session
+# leaves KDE's Meta+ shortcuts lent out, and uninstalling the helper that holds
+# the backup would strand them with nothing left to put them back.
+_shortcuts=$(command -v omarchy-window-shortcuts 2>/dev/null || true)
+[[ -n $_shortcuts ]] || _shortcuts="$(dirname "$(readlink -f "$0")")/omarchy-window-shortcuts"
+# Gate on the backup itself, not on `status`: that also exits non-zero when there
+# is no Plasma to ask, which would fire this on a machine that never borrowed.
+_sbak="${OC_KDE_SHORTCUT_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/kde-shortcuts.backup.json}"
+if [[ -x $_shortcuts && -f $_sbak ]]; then
+  log "Giving KDE back the keyboard shortcuts a nested window had borrowed"
+  run "$_shortcuts" restore
+fi
+
 log "Removing the Omarchy session entry"
 run sudo rm -f /usr/share/wayland-sessions/omarchy.desktop
 

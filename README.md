@@ -120,8 +120,12 @@ It asks KWin for your real work area (screen minus panels), sizes the nested out
 exactly, and pins it there with no titlebar. `--install-desktop` adds a launcher entry with
 an Omarchy icon so it starts from your application menu with no terminal behind it.
 
-While that window is focused, your desktop's global shortcuts step aside so Omarchy's
-keybindings work — and come straight back when you focus something else.
+While that window is open, Omarchy borrows your desktop's <kbd>Meta</kbd>+<kbd>key</kbd>
+shortcuts so its own keybindings work, and hands every one of them back when it closes.
+<kbd>Super</kbd> on its own and <kbd>Alt</kbd>+<kbd>Tab</kbd> are deliberately **not**
+borrowed — your launcher menu and window switcher keep working from Plasma even while
+Omarchy has focus. See [the nested window guide](docs/nested-window.md#the-keyboard) for
+how that split works and how to put things back by hand.
 
 `--bare` skips Omarchy's `systemctl --user import-environment`, which would otherwise
 overwrite `WAYLAND_DISPLAY` in your **host** session, while still starting the Omarchy shell
@@ -279,6 +283,7 @@ instead and the file names in the second column are what you call.
 | --- | --- | --- |
 | `omarchy-on-cachyos` | [`omarchy-on-cachyos`](omarchy-on-cachyos) | **Menu fronting everything below.** `status` prints state and exits |
 | `omarchy-window` | [`omarchy-window`](omarchy-window) | Omarchy in a window. `--bare`, `-s WxH`, `--detach`, `--install-desktop` |
+| `omarchy-window-shortcuts` | [`omarchy-window-shortcuts`](omarchy-window-shortcuts) | Lend Omarchy KDE's <kbd>Meta</kbd>+ keys, keeping <kbd>Super</kbd> and <kbd>Alt</kbd>+<kbd>Tab</kbd>. `suppress`, `restore`, `status`, `--dry-run` |
 | `omarchy-oc-install` | [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
 | `omarchy-oc-block-updates` | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
 | `omarchy-oc-preserve-identity` | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme and fastfetch. `--apply`, `--undo` |

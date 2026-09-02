@@ -149,43 +149,42 @@ fi
 # nested compositor is ever offered the key, which is most of Omarchy's keymap.
 # The clean protocol for this is zwp_keyboard_shortcuts_inhibit_v1, but the
 # Wayland backend does not request it - Hyprland only implements the server half
-# for its own clients. So we drive KWin from outside instead: a small KWin script
-# blocks KDE's global shortcuts while the nested window is focused and releases
-# them the moment it is not, so Plasma keeps working everywhere else.
-KWIN_SCRIPT_NAME=omarchy-window-keys
+# for its own clients. So we take the keys from KDE directly.
+#
+# This used to load a KWin script that called KGlobalAccel's
+# blockGlobalShortcuts as the window gained and lost focus. That was focus-
+# aware, but all-or-nothing: it also silenced Super on its own (KWin's
+# modifier-only launcher shortcut) and Alt+Tab, neither of which Omarchy uses
+# and both of which you still want from Plasma.
+#
+# omarchy-window-shortcuts instead clears only the combinations carrying the
+# Meta modifier, which leaves Super-alone and Alt+Tab untouched - see that
+# script for why that one rule is enough. The cost is that it is no longer
+# focus-driven: a KWin script can pass a bool over D-Bus but not the integer
+# array this needs (KWin logs "no slot matched"), so the keys are lent for as
+# long as the window is open and handed back when it closes.
+SHORTCUTS=$(command -v omarchy-window-shortcuts 2>/dev/null || true)
+[[ -n $SHORTCUTS ]] || SHORTCUTS="$(dirname "$(readlink -f "$0")")/omarchy-window-shortcuts"
 unblock_shortcuts() {
-  [[ -n ${QDBUS:-} ]] || return 0
-  $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1 || true
-  $QDBUS org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel.blockGlobalShortcuts false >/dev/null 2>&1 || true
+  [[ -x $SHORTCUTS ]] || return 0
+  "$SHORTCUTS" restore >/dev/null 2>&1 || true
 }
 grab_shortcuts() {
-  # Returning 0 here would make the caller print "KDE shortcuts yield to Omarchy"
-  # while nothing had been installed - a false success.
-  [[ -n ${QDBUS:-} ]] || return 1
-  local js id
-  js="${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-keys.js"
-  cat > "$js" <<'JS'
-function omarchyUpdate(w) {
-  var on = false;
-  try { on = !!(w && w.resourceClass &&
-                String(w.resourceClass).toLowerCase().indexOf("aquamarine") === 0); } catch (e) {}
-  callDBus("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel",
-           "blockGlobalShortcuts", on);
-}
-workspace.windowActivated.connect(omarchyUpdate);
-omarchyUpdate(workspace.activeWindow);
-JS
-  $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1 || true
-  id=$($QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$js" "$KWIN_SCRIPT_NAME" 2>/dev/null) || return 1
-  $QDBUS org.kde.KWin "/Scripting/Script$id" org.kde.kwin.Script.run >/dev/null 2>&1 || return 1
-  return 0
+  # Returning 0 here would make the caller print that Omarchy has the keys
+  # while nothing had been changed - a false success.
+  [[ -x $SHORTCUTS ]] || return 1
+  # A run that was killed before it could hand the keys back leaves its backup
+  # behind, and suppress refuses to run twice over its own backup. Replay it
+  # first so a crashed session self-heals instead of blocking every later one.
+  "$SHORTCUTS" restore >/dev/null 2>&1 || true
+  "$SHORTCUTS" suppress >/dev/null 2>&1
 }
 
 if (( GRAB_KEYS )); then
   if grab_shortcuts; then
-    KEYS="KDE shortcuts yield to Omarchy while this window is focused"
+    KEYS="Omarchy has KDE's Meta+ keys; Super alone and Alt+Tab still work in Plasma"
   else
-    KEYS="could not install the KWin key handover - your desktop keeps its Meta+ binds"
+    KEYS="could not borrow KDE's Meta+ keys - your desktop keeps them"
     KEYS_FIX=1
   fi
 fi
@@ -225,7 +224,10 @@ if [[ -n ${KEYS:-} ]]; then
   if [[ -n ${KEYS_FIX:-} ]]; then
     cat <<'KEYSFIX'
         Omarchy's Super+ bindings will be swallowed by your desktop. To fix:
-          - KDE: ensure qdbus is installed (pacman -S qt6-tools) and re-run.
+          - KDE: check the helper runs on its own and says what is wrong:
+              omarchy-window-shortcuts suppress --dry-run
+            It needs gdbus and python3 (pacman -S --needed glib2 python) and a
+            live Plasma session.
           - Other desktops: unbind the conflicting Super+ shortcuts, or run with
             --no-key-grab to silence this and accept the conflict.
         Nothing was changed on your system by the failed attempt.
@@ -237,11 +239,10 @@ echo
 if (( DETACH )); then
   keep="${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-$$.lua"
   cp "$CFG" "$keep"
-  # The cleanup must follow Hyprland, not this shell, or the shortcuts stay
-  # blocked after the window closes.
+  # The cleanup must follow Hyprland, not this shell, or Plasma never gets its
+  # Meta+ keys back after the window closes.
   setsid bash -c "Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null
-    $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript $KWIN_SCRIPT_NAME >/dev/null 2>&1
-    $QDBUS org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel.blockGlobalShortcuts false >/dev/null 2>&1
+    '$SHORTCUTS' restore >/dev/null 2>&1
     rm -f '$keep'" >/dev/null 2>&1 &
   echo "Started in the background (pid $!)."
   exit 0

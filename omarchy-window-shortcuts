@@ -1,0 +1,254 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: 2026 Godless-1
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# omarchy-window-shortcuts - lend Omarchy the Meta+ keys it needs, without
+# taking Plasma's Super menu or Alt+Tab away.
+#
+#   omarchy-window-shortcuts suppress   free every Meta+<key> bind for Omarchy
+#   omarchy-window-shortcuts restore    put them all back
+#   omarchy-window-shortcuts status     say what is suppressed right now
+#
+# Add --dry-run to suppress or restore to see the plan without touching a thing.
+#
+# Why not blockGlobalShortcuts, which is what this replaced: it is all or
+# nothing. It also silences Super on its own - KWin's modifier-only launcher
+# shortcut - and Alt+Tab, neither of which Omarchy uses and both of which you
+# still want from Plasma.
+#
+# So rather than blocking everything, this clears only the key combinations
+# that carry the Meta modifier. That single rule gives both exceptions for
+# free:
+#
+#   * Super alone is a KWin modifier-only shortcut, not a KGlobalAccel
+#     binding, so it is never enumerated and never touched.
+#   * Alt+Tab survives because "Walk Through Windows" is bound to both
+#     Meta+Tab and Alt+Tab, and only the Meta alternate is removed.
+#
+# Everything that is about to change is written to a backup file *first*, and
+# `restore` replays it. If a session is killed before it can restore, the
+# backup stays on disk and both `status` and the omarchy-on-cachyos menu will
+# offer to put things back. KDE also leaves each action's *default* column
+# alone, so even a deleted backup is recoverable from
+# System Settings -> Shortcuts -> Reset to Defaults.
+
+set -euo pipefail
+
+BACKUP="${OC_KDE_SHORTCUT_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/kde-shortcuts.backup.json}"
+DRYRUN=0
+ACTION=""
+
+while (($#)); do
+  case "$1" in
+    suppress | restore | status) ACTION="$1"; shift ;;
+    --dry-run) DRYRUN=1; shift ;;
+    -h | --help) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    *) echo "unknown option: $1" >&2; exit 1 ;;
+  esac
+done
+[[ -n $ACTION ]] || { sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 1; }
+
+for dep in gdbus python3; do
+  command -v "$dep" >/dev/null 2>&1 || {
+    echo "omarchy-window-shortcuts: needs $dep, which is not installed" >&2
+    echo "  -> sudo pacman -S --needed glib2 python" >&2
+    exit 1
+  }
+done
+
+if ! gdbus call -e -d org.kde.kglobalaccel -o /kglobalaccel \
+     -m org.kde.KGlobalAccel.allMainComponents >/dev/null 2>&1; then
+  echo "omarchy-window-shortcuts: KDE's global shortcut service is not answering" >&2
+  echo "  This only works inside a running Plasma session." >&2
+  echo "  -> if you are in Plasma, check:  qdbus6 org.kde.kglobalaccel" >&2
+  exit 1
+fi
+
+BACKUP="$BACKUP" DRYRUN="$DRYRUN" python3 - "$ACTION" <<'PY'
+import ast, json, os, subprocess, sys, tempfile
+from datetime import datetime, timezone
+
+ACTION = sys.argv[1]
+BACKUP = os.environ["BACKUP"]
+DRYRUN = os.environ["DRYRUN"] == "1"
+META = 0x10000000
+
+# Qt packs the modifiers into the high bits of the key combination; the low bits
+# are the key itself. We only care whether the Meta bit is lit.
+MODS = ((0x10000000, "Meta"), (0x08000000, "Alt"), (0x04000000, "Ctrl"), (0x02000000, "Shift"))
+# Only the codes worth spelling out. The multimedia block (0x010000A8 and up) is
+# left as hex on purpose: a wrong name would read worse than an honest number.
+NAMED = {
+    0x01000000: "Esc", 0x01000001: "Tab", 0x01000002: "Backtab",
+    0x01000003: "Backspace", 0x01000004: "Return", 0x01000005: "Enter",
+    0x01000006: "Insert", 0x01000007: "Delete", 0x01000009: "Print",
+    0x01000010: "Home", 0x01000011: "End", 0x01000012: "Left",
+    0x01000013: "Up", 0x01000014: "Right", 0x01000015: "Down",
+    0x01000016: "PgUp", 0x01000017: "PgDown", 0x20: "Space",
+}
+NAMED.update({0x0100002F + n: f"F{n}" for n in range(1, 36)})
+
+
+def human(k):
+    parts = [n for bit, n in MODS if k & bit]
+    key = k & ~0x1E000000
+    parts.append(NAMED.get(key, chr(key) if 0x20 < key < 0x7F else hex(key)))
+    return "+".join(parts)
+
+
+def gv_strings(items):
+    """Render a list of strings as GVariant text, quoting safely."""
+    out = []
+    for s in items:
+        out.append("'" + str(s).replace("\\", "\\\\").replace("'", "\\'") + "'")
+    return "[" + ", ".join(out) + "]"
+
+
+def call(method, *args):
+    cmd = ["gdbus", "call", "-e", "-d", "org.kde.kglobalaccel", "-o", "/kglobalaccel",
+           "-m", "org.kde.KGlobalAccel." + method] + list(args)
+    r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.returncode != 0:
+        return None
+    try:
+        return ast.literal_eval(r.stdout.strip())
+    except (ValueError, SyntaxError):
+        return None
+
+
+def set_keys(action_id, keys):
+    arg = "@ai []" if not keys else "[" + ", ".join(str(k) for k in keys) + "]"
+    cmd = ["gdbus", "call", "-e", "-d", "org.kde.kglobalaccel", "-o", "/kglobalaccel",
+           "-m", "org.kde.KGlobalAccel.setForeignShortcut", gv_strings(action_id), arg]
+    return subprocess.run(cmd, capture_output=True, text=True).returncode == 0
+
+
+def scan():
+    """Every action that has at least one Meta+<key> combination."""
+    comps = call("allMainComponents")
+    comps = comps[0] if comps else []
+    found = []
+    for comp in comps:
+        acts = call("allActionsForComponent", gv_strings(list(comp)))
+        acts = acts[0] if acts else []
+        for act in acts:
+            got = call("shortcut", gv_strings(list(act)))
+            if not got:
+                continue
+            keys = list(got[0])
+            kept = [k for k in keys if not (k & META)]
+            if len(kept) != len(keys):
+                found.append({"id": list(act), "keys": keys, "kept": kept})
+    return found
+
+
+def write_backup(entries):
+    os.makedirs(os.path.dirname(BACKUP) or ".", exist_ok=True)
+    payload = {
+        "version": 1,
+        "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "entries": entries,
+    }
+    # Write and fsync a temporary file in the same directory, then rename, so a
+    # crash can never leave a half-written backup next to suppressed shortcuts.
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(BACKUP) or ".", prefix=".kde-shortcuts.")
+    try:
+        with os.fdopen(fd, "w") as f:
+            json.dump(payload, f, indent=1)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, BACKUP)
+    except Exception:
+        os.unlink(tmp)
+        raise
+
+
+def read_backup():
+    try:
+        with open(BACKUP) as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (json.JSONDecodeError, OSError) as e:
+        print(f"  the backup at {BACKUP} is unreadable ({e})", file=sys.stderr)
+        print("  -> your shortcut *defaults* are untouched. Recover with:", file=sys.stderr)
+        print("     System Settings -> Shortcuts -> Reset to Defaults", file=sys.stderr)
+        sys.exit(1)
+    if not isinstance(data, dict) or "entries" not in data:
+        print(f"  {BACKUP} is not a shortcut backup", file=sys.stderr)
+        sys.exit(1)
+    return data
+
+
+if ACTION == "status":
+    data = read_backup()
+    if not data:
+        print("KDE shortcuts: nothing suppressed, everything is as you left it.")
+        sys.exit(0)
+    entries = data["entries"]
+    print(f"KDE shortcuts: {len(entries)} action(s) suppressed since {data.get('saved_at', '?')}")
+    print(f"  backup: {BACKUP}")
+    for e in entries[:8]:
+        print(f"    {e['id'][0]}/{e['id'][1]}: {', '.join(human(k) for k in e['keys'])}")
+    if len(entries) > 8:
+        print(f"    ... and {len(entries) - 8} more")
+    print("  -> put them back with:  omarchy-window-shortcuts restore")
+    sys.exit(1)
+
+if ACTION == "suppress":
+    if read_backup():
+        print("Already suppressed - a backup is on disk. Restore before suppressing again.",
+              file=sys.stderr)
+        print("  -> omarchy-window-shortcuts restore", file=sys.stderr)
+        sys.exit(1)
+    entries = scan()
+    if not entries:
+        print("Nothing to do: no Meta+ shortcuts are bound in KDE.")
+        sys.exit(0)
+    if DRYRUN:
+        print(f"[dry-run] would free {len(entries)} Meta+ binding(s) for Omarchy:")
+        for e in entries:
+            dropped = [human(k) for k in e["keys"] if k & META]
+            keeps = [human(k) for k in e["kept"]]
+            tail = f"  (keeps {', '.join(keeps)})" if keeps else ""
+            print(f"    {e['id'][0]}/{e['id'][1]}: drop {', '.join(dropped)}{tail}")
+        sys.exit(0)
+    # The backup lands on disk before the first shortcut changes, never after.
+    write_backup(entries)
+    failed = [e for e in entries if not set_keys(e["id"], e["kept"])]
+    freed = len(entries) - len(failed)
+    print(f"Freed {freed} Meta+ binding(s) for Omarchy. Super on its own and Alt+Tab still belong to Plasma.")
+    if failed:
+        print(f"  {len(failed)} could not be changed:", file=sys.stderr)
+        for e in failed[:5]:
+            print(f"    {e['id'][0]}/{e['id'][1]}", file=sys.stderr)
+        print("  -> those keys stay with Plasma; Omarchy will not see them.", file=sys.stderr)
+        print("  -> everything else is still restorable:  omarchy-window-shortcuts restore",
+              file=sys.stderr)
+    sys.exit(0)
+
+if ACTION == "restore":
+    data = read_backup()
+    if not data:
+        print("Nothing to restore - no backup on disk.")
+        sys.exit(0)
+    entries = data["entries"]
+    if DRYRUN:
+        print(f"[dry-run] would give {len(entries)} binding(s) back to Plasma:")
+        for e in entries:
+            print(f"    {e['id'][0]}/{e['id'][1]}: {', '.join(human(k) for k in e['keys'])}")
+        sys.exit(0)
+    failed = [e for e in entries if not set_keys(e["id"], e["keys"])]
+    if failed:
+        # Keep the backup. A partial restore that deleted its own evidence would
+        # strand the rest with no way back.
+        print(f"Restored {len(entries) - len(failed)} of {len(entries)}; {len(failed)} failed.",
+              file=sys.stderr)
+        print(f"  The backup is kept at {BACKUP} so you can retry:", file=sys.stderr)
+        print("  -> omarchy-window-shortcuts restore", file=sys.stderr)
+        print("  -> or System Settings -> Shortcuts -> Reset to Defaults", file=sys.stderr)
+        sys.exit(1)
+    os.unlink(BACKUP)
+    print(f"Gave {len(entries)} binding(s) back to Plasma.")
+    sys.exit(0)
+PY

@@ -3,7 +3,7 @@
 # Maintainer: Godless-1 <19769978+Godless-1@users.noreply.github.com>
 
 pkgname=omarchy-on-cachyos
-pkgver=1.1.0
+pkgver=1.2.0
 pkgrel=1
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
@@ -13,8 +13,9 @@ license=('AGPL-3.0-or-later' 'CC-BY-SA-4.0')
 # declared because namcap resolves the shebangs to it; hicolor-icon-theme owns
 # the directory hierarchy the icon is installed into; python is invoked from
 # heredocs to edit kwinrulesrc and pacman.conf structurally rather than with
-# fragile sed, which namcap cannot see from a static scan.
-depends=('bash' 'python' 'hicolor-icon-theme')
+# fragile sed, which namcap cannot see from a static scan; glib2 provides the
+# gdbus that omarchy-window-shortcuts talks to KDE with.
+depends=('bash' 'python' 'hicolor-icon-theme' 'glib2')
 optdepends=(
   'gum: styled menu for omarchy-on-cachyos'
   'omarchy: the desktop this manages'
@@ -37,6 +38,7 @@ _libdir=/usr/lib/$pkgname
 _cmds=(
   'omarchy-on-cachyos:omarchy-on-cachyos'
   'omarchy-window:omarchy-window'
+  'omarchy-window-shortcuts:omarchy-window-shortcuts'
   'omarchy-oc-install:install-omarchy-on-cachyos.sh'
   'omarchy-oc-uninstall:uninstall-omarchy-on-cachyos.sh'
   'omarchy-oc-block-updates:block-omarchy-updates.sh'
@@ -49,7 +51,7 @@ package() {
   cd "$pkgname-$pkgver"
 
   install -dm755 "$pkgdir$_libdir"
-  for f in omarchy-on-cachyos omarchy-window *.sh; do
+  for f in omarchy-on-cachyos omarchy-window omarchy-window-shortcuts *.sh; do
     install -Dm755 "$f" "$pkgdir$_libdir/$f"
   done
 

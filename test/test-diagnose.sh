@@ -40,7 +40,20 @@ new_root() {
   echo "$r"
 }
 
-check() { OC_ROOT="$1" HOME="$1/home" "$TOOL" check 2>&1; }
+# XDG_DATA_HOME is cleared so the shortcut-backup probe resolves under the fake
+# HOME rather than wherever the machine running the tests keeps its own.
+check() { OC_ROOT="$1" HOME="$1/home" XDG_DATA_HOME='' "$TOOL" check 2>&1; }
+
+# Leave a shortcut backup behind, as a killed omarchy-window session would.
+stale_shortcuts() { # stale_shortcuts <root> <entry-count>
+  local d="$1/home/.local/share/omarchy-cachyos" i n="$2" e=""
+  mkdir -p "$d"
+  for ((i = 0; i < n; i++)); do
+    e+="{\"id\":[\"kwin\",\"a$i\",\"\",\"\"],\"keys\":[268435527],\"kept\":[]},"
+  done
+  printf '{"version":1,"saved_at":"now","entries":[%s]}' "${e%,}" \
+    > "$d/kde-shortcuts.backup.json"
+}
 
 expect()     { local d="$1" w="$2" o="$3"; if grep -qF "$w" <<<"$o"; then ok "$d"; else
                  nope "$d"; printf '        wanted: %s\n' "$w"
@@ -79,6 +92,27 @@ expect "detects an orphaned /boot entry token" "orphaned /boot entry" "$(check "
 
 R=$(new_root); ln -sf "$R/usr/bin/omarchy-update" "$R/usr/local/share/omarchy-blocked/usr_bin_omarchy-update"
 expect "detects a stashed original that points at the guard" "symlink pointing at the guard" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); stale_shortcuts "$R" 3
+expect "detects shortcuts a killed window session never handed back" \
+  "missing 3 keyboard shortcut(s)" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); stale_shortcuts "$R" 3
+expect "offers the restore command as the fix" \
+  "omarchy-window-shortcuts restore" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); stale_shortcuts "$R" 3
+expect "says plainly that Super and Alt+Tab were never taken" \
+  "Alt+Tab are not affected" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); mkdir -p "$R/home/.local/share/omarchy-cachyos"
+printf 'not json at all' > "$R/home/.local/share/omarchy-cachyos/kde-shortcuts.backup.json"
+expect "still reports an unreadable shortcut backup" \
+  "keyboard shortcut(s)" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root)
+expect_not "a healthy tree says nothing about shortcuts" \
+  "keyboard shortcut" "$(check "$R")"; rm -rf "$R"
 
 printf '\n\033[1;34m== severity ordering\033[0m\n'
 R=$(new_root); printf 'HOOKS=(x)\n' > "$R/etc/mkinitcpio.conf.d/omarchy_hooks.conf"

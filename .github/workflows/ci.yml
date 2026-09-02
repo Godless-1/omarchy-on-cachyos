@@ -27,7 +27,7 @@ jobs:
       - name: Lint every script
         run: |
           shopt -s nullglob
-          files=(*.sh omarchy-window omarchy-on-cachyos test/*.sh)
+          files=(*.sh omarchy-window omarchy-window-shortcuts omarchy-on-cachyos test/*.sh)
           printf 'checking: %s\n' "${files[@]}"
           shellcheck -s bash -S style "${files[@]}"
 
@@ -38,7 +38,7 @@ jobs:
       - uses: actions/checkout@v4
       - run: |
           shopt -s nullglob
-          for f in *.sh omarchy-window omarchy-on-cachyos test/*.sh; do
+          for f in *.sh omarchy-window omarchy-window-shortcuts omarchy-on-cachyos test/*.sh; do
             bash -n "$f" && echo "ok  $f"
           done
 
@@ -75,7 +75,8 @@ jobs:
           pkg=$(ls omarchy-on-cachyos-*.pkg.tar.* | head -1)
           echo "built: $pkg"
           list=$(bsdtar -tf "$pkg")
-          for c in omarchy-on-cachyos omarchy-window omarchy-oc-install \
+          for c in omarchy-on-cachyos omarchy-window omarchy-window-shortcuts \
+                   omarchy-oc-install \
                    omarchy-oc-uninstall omarchy-oc-block-updates \
                    omarchy-oc-verify-boot omarchy-oc-preserve-identity \
                    omarchy-oc-clean-boot; do

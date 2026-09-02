@@ -143,6 +143,22 @@ diagnose() {
     fi
   fi
 
+  # --- keyboard ---------------------------------------------------------
+  # A windowed Omarchy session borrows KDE's Meta+ combinations and hands them
+  # back on exit. A backup still on disk means some session was killed first,
+  # and those shortcuts are inert right now.
+  local kbak n
+  kbak="${OC_KDE_SHORTCUT_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/kde-shortcuts.backup.json}"
+  if [[ -f $kbak ]]; then
+    n=$(python3 -c 'import json,sys
+try: print(len(json.load(open(sys.argv[1]))["entries"]))
+except Exception: print("some")' "$kbak" 2>/dev/null) || n="some"
+    add HIGH shortcuts \
+      "KDE is missing $n keyboard shortcut(s) a windowed Omarchy session borrowed" \
+      "The window hands them back when it closes; this one was killed before it could. Super on its own and Alt+Tab are not affected - those are never borrowed - but the Meta+ combinations are inert until they go back. Restoring is exact: every original is in the backup, and KDE's own defaults were never touched either way." \
+      "$HERE/omarchy-window-shortcuts restore"
+  fi
+
   # --- convenience ------------------------------------------------------
   if (( installed )) && [[ ! -e "$(_p /usr/share/wayland-sessions/omarchy.desktop)" ]]; then
     add LOW session \

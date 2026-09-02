@@ -112,6 +112,7 @@ Listed because a provenance page that claims a clean run would be worth less tha
 | Advised restoring `/etc/os-release` by symlinking it | CachyOS keeps its identity in an unowned file edited in place, so that produced plain Arch branding | Uses the distribution's own branding script |
 | 64 makepkg build artefacts were committed | `git add -A` after building in the repo; CI then rebuilt a stale extracted tree instead of the tagged tarball | `.gitignore` covers them, with a comment on why it matters |
 | `grep -c . \|\| echo 0` broke the diagnostics' arithmetic | `grep -c` prints 0 *and* exits 1, so the fallback appended a second 0 | Uses `\|\| true` and a default |
+| The key handover called `blockGlobalShortcuts`, which is all-or-nothing | It also silenced <kbd>Super</kbd> on its own and <kbd>Alt</kbd>+<kbd>Tab</kbd> — neither of which Omarchy uses, both of which the user still wanted from Plasma. Reported from use, not found by review | Clears only Meta-modified combinations, which leaves both untouched by construction |
 
 The pattern worth noting: most were caught by *running the thing*, which is why the dry-run
 and verification steps exist at all.
