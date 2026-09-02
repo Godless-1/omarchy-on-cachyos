@@ -26,7 +26,7 @@ optdepends=(
 )
 install=omarchy-on-cachyos.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('84edc13409b51312a6a8aef0b738f4b4cdb554a579a01224d7d747148f7a1528')
+sha256sums=('5d5dee99c1fd928956cfec6517c80e875b5d5907b013ff8d1996c8cf1afa1ebd')
 
 # Scripts keep their repository names in /usr/lib, and get short, prefixed
 # commands on PATH. Renaming them in place would break every reference in the
