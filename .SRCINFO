@@ -18,7 +18,7 @@ pkgbase = omarchy-on-cachyos
 	optdepends = kscreen: exact work-area fitting for omarchy-window on KDE
 	optdepends = snapper: pre-install snapshots
 	optdepends = mkinitcpio: initramfs inspection in omarchy-verify-boot
-	source = omarchy-on-cachyos::git+https://github.com/Godless-1/omarchy-on-cachyos.git#tag=v1.4.1
+	source = omarchy-on-cachyos-1.4.1::git+https://github.com/Godless-1/omarchy-on-cachyos.git#tag=v1.4.1
 	sha256sums = SKIP
 
 pkgname = omarchy-on-cachyos

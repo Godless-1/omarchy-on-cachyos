@@ -32,7 +32,9 @@ makedepends=('git')
 # carried a hash that could never match, and checking out a tag failed to build.
 # A tag ref has no such loop - git verifies the objects it fetches, and the
 # release is reproducible from the tag alone.
-source=("$pkgname::git+$url.git#tag=v$pkgver")
+# Named with the version: a bare "$pkgname" clone target would collide with the
+# script of that name already sitting in the checkout you run makepkg from.
+source=("$pkgname-$pkgver::git+$url.git#tag=v$pkgver")
 sha256sums=('SKIP')
 
 # Scripts keep their repository names in /usr/lib, and get short, prefixed
@@ -55,7 +57,7 @@ _cmds=(
 )
 
 package() {
-  cd "$pkgname"
+  cd "$pkgname-$pkgver"
 
   install -dm755 "$pkgdir$_libdir"
   for f in omarchy-on-cachyos omarchy-window omarchy-window-shortcuts *.sh; do
