@@ -45,8 +45,16 @@ jobs:
   diagnostics:
     name: fault-injection tests
     runs-on: ubuntu-latest
+    # Arch, not ubuntu-latest. The suites exercise Arch tooling - vercmp orders
+    # the versions the update check compares - and on Ubuntu that tool is simply
+    # absent, so every "an update IS available" assertion failed while every
+    # "stays silent" one passed for the wrong reason. A test that cannot tell
+    # those apart is worse than no test.
+    container: archlinux:base-devel
     steps:
       - uses: actions/checkout@v4
+      - name: Install what the suites need
+        run: pacman -Sy --noconfirm --needed python procps-ng
       - name: Run the diagnostic test suite
         run: ./test/test-diagnose.sh
       - name: Run the uwsm-app shim test suite
