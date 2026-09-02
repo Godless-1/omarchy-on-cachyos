@@ -107,6 +107,38 @@ moment you need it. It now says so explicitly when it cannot inspect something.
 - Every internal documentation link, mechanically
 - The absence of personal data, by scanning every file
 
+## What was NOT tested
+
+Stated plainly, because "written carefully" is not the same as "exercised", and the rest of
+this page would be worth less if this section were missing.
+
+| Path | Status |
+| --- | --- |
+| `install-omarchy-on-cachyos.sh` | **Exercised.** Dry-run plus real runs, including two failed pacman transactions that were diagnosed and fixed |
+| `verify-reboot-safety.sh` | **Exercised heavily.** Four runs; two of its own bugs found and fixed that way |
+| `omarchy-window --bare` | **Exercised.** Launched nested, sized to the work area |
+| `block-omarchy-updates.sh` (install path) | **Exercised.** All four binaries guarded, `NoExtract` present, originals stashed |
+| `clean-stale-boot-entries.sh --archive` | **Exercised once**, on one machine |
+| `uninstall-omarchy-on-cachyos.sh` | **Never run.** Written and syntax-checked only |
+| `block-omarchy-updates.sh --undo` | **Never run** |
+| `OMARCHY_ALLOW_DANGEROUS=1` override | **Never run** |
+| `clean-stale-boot-entries.sh --delete` | **Never run** |
+| The "bootloader still references it" refusal | **Never triggered** — the one run had no references |
+| `verify-reboot-safety.sh` on a busybox initramfs | **Never run.** That branch is reasoned, not observed |
+| Any non-CachyOS base, or a non-KDE desktop | **Never run** |
+
+The untested paths are mostly the reversal ones, which is the uncomfortable half: the code you
+reach for when something has already gone wrong is the code with the least evidence behind it.
+They are short and readable — read them before you rely on them, and keep the backups the
+installer made.
+
+One bug in exactly this category was found only by reading the output of a successful run: the
+vault of stashed originals contained **symlinks that resolved back to the guard**, because
+`/usr/share/omarchy/bin/omarchy-*` are symlinks into `/usr/bin` and `cp -a` preserved them as
+such. The install path worked perfectly; `--undo` would have restored a guard over a guard.
+Fixed with `cp -aL`, a repair pass for vaults written by earlier versions, and a refusal in
+the guard to exec anything that is itself a guard.
+
 ## Privacy
 
 The operator's machine is not described in this repository. Before publication every file was

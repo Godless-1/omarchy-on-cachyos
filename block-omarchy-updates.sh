@@ -52,7 +52,8 @@ sudo -v || die "sudo required"
 # ------------------------------------------------------------------- undo
 if [[ ${1:-} == "--undo" ]]; then
   log "Restoring originals from $VAULT"
-  for t in "${TARGETS[@]}"; do
+  # /usr/bin first: the /usr/share copies may legitimately be symlinks to them.
+  for t in $(printf '%s\n' "${TARGETS[@]}" | sort); do
     b="$VAULT/$(echo "${t#/}" | tr / _)"
     if [[ -f $b ]]; then
       sudo install -m 0755 "$b" "$t"; echo "  restored $t"
@@ -76,7 +77,27 @@ for t in "${TARGETS[@]}"; do
   if is_guard "$t"; then
     echo "  $t is already a guard - not overwriting the backup"
   else
-    sudo cp -a "$t" "$b"; echo "  saved $(basename "$t") -> $b"
+    # -L dereferences: /usr/share/omarchy/bin/omarchy-* are symlinks into /usr/bin,
+    # and `cp -a` would stash a symlink that later resolves to the guard itself.
+    sudo cp -aL "$t" "$b"; echo "  saved $(basename "$t") -> $b"
+  fi
+done
+
+# Repair symlinked vault entries left by earlier runs, which would otherwise
+# restore a guard over a guard on --undo.
+for t in "${TARGETS[@]}"; do
+  b="$VAULT/$(echo "${t#/}" | tr / _)"
+  if sudo test -L "$b"; then
+    tgt=$(sudo readlink -f "$b" 2>/dev/null || true)
+    if [[ -n $tgt ]] && sudo grep -q "$MARKER" "$tgt" 2>/dev/null; then
+      src="$VAULT/usr_bin_$(basename "$t")"
+      if sudo test -f "$src" && ! sudo grep -q "$MARKER" "$src" 2>/dev/null; then
+        warn "vault entry $(basename "$b") was a symlink into the guard - repairing"
+        sudo rm -f "$b"; sudo cp -a "$src" "$b"
+      else
+        warn "vault entry $(basename "$b") is unusable; reinstall with: sudo pacman -S omarchy"
+      fi
+    fi
   fi
 done
 
@@ -106,9 +127,14 @@ msg="'$self' is blocked on this machine. Use: sudo pacman -Syu"
 
 if [[ -n ${OMARCHY_ALLOW_DANGEROUS:-} ]]; then
   real="/usr/local/share/omarchy-blocked/$(echo "${0#/}" | tr / _)"
-  if [[ -x $real ]]; then
+  if [[ -x $real ]] && ! grep -q "OMARCHY-BLOCKED-GUARD" "$real" 2>/dev/null; then
     echo "OMARCHY_ALLOW_DANGEROUS set - running the real $self." >&2
     exec "$real" "$@"
+  fi
+  if [[ -e $real ]]; then
+    echo "Stashed copy of $self is itself a guard - refusing to loop." >&2
+    echo "Reinstall the original with: sudo pacman -S omarchy" >&2
+    exit 1
   fi
   echo "No stashed original found for $self." >&2
   exit 1

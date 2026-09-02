@@ -268,7 +268,8 @@ This is the gentlest way to learn Hyprland's keybindings.
 - **[Migrations](docs/migrations.md)** — the 96 markers and why they matter
 - **[Troubleshooting](docs/troubleshooting.md)** — real conflicts and their fixes
 - **[Licensing](LICENSING.md)** — why AGPL for code and CC BY-SA for prose
-- **[Provenance](PROVENANCE.md)** — how this was built, and the mistakes made doing it
+- **[Provenance](PROVENANCE.md)** — how this was built, the mistakes made doing it, and
+  [which code paths have never been run](PROVENANCE.md#what-was-not-tested)
 
 ---
 

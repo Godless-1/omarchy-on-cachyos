@@ -206,6 +206,12 @@ Anything matching `[0-9a-f]{32}` that is not that token is an orphan. Clean it u
 ./clean-stale-boot-entries.sh --archive  # move out of /boot, keep a copy
 ```
 
+> [!NOTE]
+> `--archive` has been exercised on exactly one machine. `--delete`, and the refusal that
+> fires when the bootloader still references a directory, have never run. Prefer `--archive`,
+> and keep the copy until you have rebooted successfully.
+> See [what was not tested](../PROVENANCE.md#what-was-not-tested).
+
 A real run looks like this — note that it checks bootloader references *before* touching
 anything, and archives rather than deletes by default (machine-ids abbreviated):
 
