@@ -6,14 +6,15 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 <div align="center">
 
 <img src="docs/banner.svg" width="100%"
-     alt="omarchy-on-cachyos. Hyprland beside Plasma, your bootloader untouched. Styled as a terminal showing the command ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
+     alt="omarchy-on-cachyos. Run the full Omarchy desktop in a window on your existing session, bootloader untouched. Styled as a terminal showing the command ./install-omarchy-on-cachyos.sh --dry-run. Licensed AGPL-3.0-or-later.">
 
 </div>
 
 # omarchy-on-cachyos
 
-**Install [Omarchy](https://omarchy.org) alongside your existing desktop on CachyOS or Arch —
-without letting it near your bootloader, your initramfs, or your repos.**
+**Run the full [Omarchy](https://omarchy.org) desktop in a window inside the session you
+already use — sized to fit your screen automatically. Add it as a login option too, if you
+want one. On CachyOS or Arch, without letting it near your bootloader, initramfs, or repos.**
 
 <a href="install-omarchy-on-cachyos.sh"><img src="docs/badges/bash.svg" alt="Written in Bash 5.x"></a>
 <a href="https://omarchy.org"><img src="docs/badges/omarchy.svg" alt="Targets Omarchy 4.0.2"></a>
@@ -26,8 +27,13 @@ without letting it near your bootloader, your initramfs, or your repos.**
 
 ## At a glance
 
-**What it does.** Puts Omarchy 4's Hyprland desktop in your greeter's session list, next to
-the desktop you already use. You pick one at login. No VM, no container, no second disk.
+**What it does.** Runs the whole Omarchy 4 desktop — bar, launcher, keybindings, theming — in
+an ordinary **window on your current session**, sized to your screen minus your panels. It is
+the same machine and the same filesystem, so there is no VM, no container, and nothing to
+share between them. Your files are simply already there.
+
+**And, as a bonus,** it also registers Omarchy in your greeter's session list, so you can log
+into it full-screen whenever you want the real thing. Both from one install.
 
 **Why not just install Omarchy directly.** Omarchy's packages assume they own the
 machine. Unguarded, they rewrite your initramfs hooks, your bootloader entries, and your
@@ -45,7 +51,7 @@ your encryption hook has vanished, and a verifier that proves you can still boot
 | Touches your repositories | Adds one, ordered **last**, so it never overrides yours |
 | Your existing desktop | Untouched — still there, still your default if you prefer |
 | Reversible | Yes — uninstaller, config backups, and a bootable snapshot |
-| Needs a reboot | No. Log out and back in |
+| Needs a reboot | No. For the window, not even a logout |
 
 **The whole flow, start to finish:**
 
@@ -79,6 +85,34 @@ session? Run [`./omarchy-window`](#the-nested-window) and get the desktop in a w
 > unattended or committed unread. [**PROVENANCE.md**](PROVENANCE.md) gives the full account,
 > including [the mistakes made and corrected](PROVENANCE.md#mistakes-made-and-corrected)
 > along the way, and [how to verify every claim yourself](PROVENANCE.md#auditing-this-yourself).
+
+---
+
+## The nested window
+
+Hyprland's Aquamarine backend runs nested when `WAYLAND_DISPLAY` is set. So you can run the
+whole Omarchy desktop **in a window on your existing session** — same machine, same
+filesystem, nothing to share:
+
+```bash
+./omarchy-window --bare
+```
+
+It queries KWin for the real work area (your screen minus panels), sizes the nested output to
+match exactly, and installs a KWin rule so it lands there with no titlebar.
+
+`--bare` skips Omarchy's `systemctl --user import-environment`, which would otherwise
+overwrite `WAYLAND_DISPLAY` in your **host** session — while still starting the Omarchy shell
+so the menu (<kbd>Super</kbd>+<kbd>Space</kbd>) and bar work.
+
+This is the gentlest way to learn Hyprland's keybindings.
+
+| Key | Action |
+| --- | --- |
+| <kbd>Super</kbd>+<kbd>Space</kbd> | Omarchy menu |
+| <kbd>Super</kbd>+<kbd>K</kbd> | Omarchy's own keybinding cheatsheet |
+| <kbd>Super</kbd>+<kbd>Q</kbd> | Terminal |
+| <kbd>Super</kbd>+<kbd>Escape</kbd> | Exit the nested session |
 
 ---
 
@@ -220,32 +254,6 @@ always one logout away.
 10. Seeds `~/.config` **copy-if-absent** — your files always win
 
 ---
-
-## The nested window
-
-Hyprland's Aquamarine backend runs nested when `WAYLAND_DISPLAY` is set. So you can run the
-whole Omarchy desktop **in a window on your existing session** — same machine, same
-filesystem, nothing to share:
-
-```bash
-./omarchy-window --bare
-```
-
-It queries KWin for the real work area (your screen minus panels), sizes the nested output to
-match exactly, and installs a KWin rule so it lands there with no titlebar.
-
-`--bare` skips Omarchy's `systemctl --user import-environment`, which would otherwise
-overwrite `WAYLAND_DISPLAY` in your **host** session — while still starting the Omarchy shell
-so the menu (<kbd>Super</kbd>+<kbd>Space</kbd>) and bar work.
-
-This is the gentlest way to learn Hyprland's keybindings.
-
-| Key | Action |
-| --- | --- |
-| <kbd>Super</kbd>+<kbd>Space</kbd> | Omarchy menu |
-| <kbd>Super</kbd>+<kbd>K</kbd> | Omarchy's own keybinding cheatsheet |
-| <kbd>Super</kbd>+<kbd>Q</kbd> | Terminal |
-| <kbd>Super</kbd>+<kbd>Escape</kbd> | Exit the nested session |
 
 ---
 

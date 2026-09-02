@@ -4,7 +4,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 -->
 <svg xmlns="http://www.w3.org/2000/svg" width="880" height="240" viewBox="0 0 880 240" role="img" aria-labelledby="t d">
   <title id="t">omarchy-on-cachyos</title>
-  <desc id="d">Hyprland beside Plasma. Your bootloader untouched. Licensed AGPL-3.0-or-later.</desc>
+  <desc id="d">Run the full Omarchy desktop in a window on your existing session. Bootloader untouched. Licensed AGPL-3.0-or-later.</desc>
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
       <stop offset="0%" stop-color="#1a1b26"/><stop offset="100%" stop-color="#24283b"/>
@@ -21,7 +21,7 @@ SPDX-License-Identifier: CC-BY-SA-4.0
     <text x="44" y="128" font-size="40" font-weight="bold" fill="#c0caf5">omarchy</text>
     <text x="238" y="128" font-size="40" font-weight="bold" fill="#9aa5ce">on</text>
     <text x="300" y="128" font-size="40" font-weight="bold" fill="#7aa2f7">cachyos</text>
-    <text x="44" y="164" font-size="16" fill="#9ece6a">Hyprland beside Plasma. Your bootloader untouched.</text>
+    <text x="44" y="164" font-size="16" fill="#9ece6a">Full Omarchy in a window on your desktop. Bootloader untouched.</text>
     <g font-size="13.5">
       <text x="44" y="203" fill="#9aa5ce">$</text>
       <text x="64" y="203" fill="#c0caf5">./install-omarchy-on-cachyos.sh</text>
