@@ -14,14 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install shellcheck
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+      # Pinned: distro shellcheck versions disagree about which findings are
+      # reportable, so an unpinned CI fails on code a contributor's machine passes.
+      - name: Install shellcheck ${{ env.SHELLCHECK_VERSION }}
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+        run: |
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SHELLCHECK_VERSION}/shellcheck-${SHELLCHECK_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJf - -C /tmp
+          sudo install -m755 "/tmp/shellcheck-${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
       - name: Lint every script
         run: |
           shopt -s nullglob
           files=(*.sh omarchy-window omarchy-on-cachyos test/*.sh)
           printf 'checking: %s\n' "${files[@]}"
-          shellcheck -s bash "${files[@]}"
+          shellcheck -s bash -S style "${files[@]}"
 
   syntax:
     name: bash -n

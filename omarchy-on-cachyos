@@ -406,8 +406,12 @@ Categories=System;Settings;PackageManager;
 Keywords=omarchy;hyprland;pacman;boot;initramfs;
 StartupNotify=false
 EOF
-  command -v gtk-update-icon-cache >/dev/null &&     gtk-update-icon-cache -qtf "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
-  command -v update-desktop-database >/dev/null &&     update-desktop-database "$appdir" 2>/dev/null || true
+  if command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -qtf "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
+  fi
+  if command -v update-desktop-database >/dev/null; then
+    update-desktop-database "$appdir" 2>/dev/null || true
+  fi
   good "  Installed $appdir/omarchy-on-cachyos.desktop"
   note "  icon: $icon"
   note "  It will appear in your application menu as \"Omarchy on CachyOS\"."

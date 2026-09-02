@@ -24,3 +24,21 @@ path = ".gitignore"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2026 Godless-1"
 SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = ".SRCINFO"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Godless-1"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = ".github/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Godless-1"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+[[annotations]]
+path = "docs/icons/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "2026 Godless-1"
+SPDX-License-Identifier = "CC-BY-SA-4.0"
