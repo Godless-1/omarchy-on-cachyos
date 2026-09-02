@@ -9,90 +9,189 @@
 #
 # The critical chain: LUKS root -> systemd initramfs -> sd-encrypt understands
 # rd.luks.uuid= on the kernel cmdline. If any link breaks, root cannot unlock.
+#
+# Every failure prints how to undo or repair it. Nothing here changes the system
+# unless you pass --rebuild.
 
 set -uo pipefail
-REBUILD=0; [[ ${1:-} == "--rebuild" ]] && REBUILD=1
+
+REBUILD=0
+case "${1:-}" in
+  --rebuild) REBUILD=1 ;;
+  -h|--help) sed -n '5,15p' "$0" | sed 's/^# \?//'; exit 0 ;;
+  "") ;;
+  *) echo "unknown option: $1" >&2; exit 1 ;;
+esac
+
 PASS=0; FAIL=0; WARN=0
-ok()   { printf '  \033[1;32mPASS\033[0m  %s\n' "$*"; PASS=$((PASS+1)); }
-bad()  { printf '  \033[1;31mFAIL\033[0m  %s\n' "$*"; FAIL=$((FAIL+1)); }
-warn() { printf '  \033[1;33mWARN\033[0m  %s\n' "$*"; WARN=$((WARN+1)); }
-hdr()  { printf '\n\033[1;34m== %s\033[0m\n' "$*"; }
+FIXES=()
 
-sudo -v || { echo "sudo required"; exit 1; }
+ok()   { printf '  \033[1;32mPASS\033[0m  %s\n' "$*"; PASS=$((PASS+1)); return 0; }
+warn() { printf '  \033[1;33mWARN\033[0m  %s\n' "$*"; WARN=$((WARN+1)); return 0; }
+hdr()  { printf '\n\033[1;34m== %s\033[0m\n' "$*"; return 0; }
+# bad <message> [remediation lines...] - the remediation is printed inline AND
+# collected for the verdict, so it is impossible to miss a failure's fix.
+bad() {
+  local msg="$1"; shift
+  printf '  \033[1;31mFAIL\033[0m  %s\n' "$msg"; FAIL=$((FAIL+1))
+  local line
+  for line in "$@"; do printf '        \033[1;36m->\033[0m %s\n' "$line"; done
+  FIXES+=("$msg")
+  for line in "$@"; do FIXES+=("    $line"); done
+  return 0
+}
 
+latest_backup() {
+  local d
+  d=$(find "$HOME/.local/share/omarchy-cachyos" -maxdepth 1 -type d -name 'backup-*' 2>/dev/null | sort | tail -1)
+  [[ -n $d ]] && echo "$d" || echo "$HOME/.local/share/omarchy-cachyos/backup-<timestamp>"
+}
+BACKUP=$(latest_backup)
+
+sudo -v || { echo "sudo required - this script only reads, but /boot is root-only"; exit 1; }
+
+# --------------------------------------------------------------- 1
 hdr "1. Bootloader config not hijacked"
-[[ -e /etc/mkinitcpio.conf.d/omarchy_hooks.conf ]] \
-  && bad "omarchy_hooks.conf present - it would swap sd-encrypt for encrypt" \
-  || ok "no omarchy_hooks.conf"
+if [[ -e /etc/mkinitcpio.conf.d/omarchy_hooks.conf ]]; then
+  bad "omarchy_hooks.conf present - it would swap sd-encrypt for encrypt" \
+      "Remove it now:  sudo rm /etc/mkinitcpio.conf.d/omarchy_hooks.conf" \
+      "Stop it returning:  ./block-omarchy-updates.sh  (adds the NoExtract guard)" \
+      "Do NOT run mkinitcpio until it is gone."
+else ok "no omarchy_hooks.conf"; fi
+
 if compgen -G "/etc/limine-entry-tool.d/omarchy-*" >/dev/null 2>&1; then
-  bad "omarchy limine drop-ins present - would switch you to UKI and rename entries"
+  bad "omarchy limine drop-ins present - would switch you to UKI and rename entries" \
+      "Remove them:  sudo rm /etc/limine-entry-tool.d/omarchy-*.conf" \
+      "Then regenerate entries:  sudo limine-update   (or sudo limine-mkinitcpio)" \
+      "Stop them returning:  ./install-omarchy-on-cachyos.sh  (rewrites the NoExtract guards)"
 else ok "no omarchy limine-entry-tool drop-ins"; fi
 
+# --------------------------------------------------------------- 2
 hdr "2. Effective mkinitcpio HOOKS"
 EFF=$(sudo bash -c 'HOOKS=(); MODULES=(); . /etc/mkinitcpio.conf
   for f in /etc/mkinitcpio.conf.d/*.conf; do [ -e "$f" ] && . "$f"; done; echo "${HOOKS[*]}"')
 echo "        $EFF"
-grep -q 'rd.luks' /proc/cmdline && LUKS=1 || LUKS=0
+
+LUKS=0
+grep -q 'rd.luks' /proc/cmdline && LUKS=1
 PLY_THEME=$(grep -i '^Theme=' /etc/plymouth/plymouthd.conf 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')
+
 if (( LUKS )); then
-  [[ $EFF == *sd-encrypt* ]] && ok "sd-encrypt present (matches rd.luks.uuid= on cmdline)" \
-                             || bad "sd-encrypt MISSING but root is LUKS - would not unlock"
-  [[ $EFF == *" systemd"* || $EFF == "systemd"* || $EFF == *"base systemd"* ]] \
-     && ok "systemd initramfs" || bad "systemd hook missing - rd.luks.uuid= would not be parsed"
-  [[ $EFF == *encrypt* && $EFF != *sd-encrypt* ]] && bad "busybox 'encrypt' hook found - wrong for this cmdline"
-else ok "root is not LUKS - encryption hooks not required"; fi
-[[ $EFF == *sd-btrfs-overlayfs* ]] && ok "sd-btrfs-overlayfs present (limine snapshot boot)" \
-                                   || warn "sd-btrfs-overlayfs missing - booting a snapshot may fail"
+  if [[ $EFF == *sd-encrypt* ]]; then
+    ok "sd-encrypt present (matches rd.luks.uuid= on cmdline)"
+  else
+    bad "sd-encrypt MISSING but root is LUKS - would not unlock" \
+        "Restore your hook drop-ins:  sudo cp -a $BACKUP/mkinitcpio.conf.d/. /etc/mkinitcpio.conf.d/" \
+        "Restore the base config:     sudo cp $BACKUP/mkinitcpio.conf /etc/mkinitcpio.conf" \
+        "Check for the culprit:       ls /etc/mkinitcpio.conf.d/  (anything without a NN- prefix sorts last)" \
+        "Re-run this script. Do NOT rebuild or reboot until it passes."
+  fi
+  if [[ $EFF == *" systemd"* || $EFF == "systemd"* ]]; then
+    ok "systemd initramfs"
+  else
+    bad "systemd hook missing - rd.luks.uuid= would not be parsed" \
+        "Restore:  sudo cp -a $BACKUP/mkinitcpio.conf.d/. /etc/mkinitcpio.conf.d/" \
+        "A drop-in has replaced HOOKS wholesale. Look for a bare 'HOOKS=(...)' assignment."
+  fi
+  if [[ $EFF == *encrypt* && $EFF != *sd-encrypt* ]]; then
+    bad "busybox 'encrypt' hook found - wrong for a rd.luks.uuid= cmdline" \
+        "The two are not interchangeable: 'encrypt' expects cryptdevice=UUID=...:name" \
+        "Restore:  sudo cp -a $BACKUP/mkinitcpio.conf.d/. /etc/mkinitcpio.conf.d/"
+  fi
+else
+  ok "root is not LUKS - encryption hooks not required"
+fi
 
-hdr "3. Actual initramfs on disk"
-# Two layouts in the wild:
-#   classic mkinitcpio : /boot/initramfs-<kernel>.img
-#   kernel-install     : /boot/<entry-token>/<kernel>/initramfs   (CachyOS + limine)
-# The entry token defaults to the machine-id. Images under a DIFFERENT token are
-# orphans from a previous install - they are never booted, so judging them is noise.
-ACTIVE_TOKEN=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null)
-mapfile -t IMGS < <(sudo find /boot -maxdepth 4 \
-  \( -name 'initramfs*.img' -o -name 'initramfs' -o -name 'initrd' \) -type f 2>/dev/null | sort)
+if [[ $EFF == *sd-btrfs-overlayfs* ]]; then
+  ok "sd-btrfs-overlayfs present (limine snapshot boot)"
+elif [[ $EFF == *btrfs-overlayfs* ]]; then
+  warn "btrfs-overlayfs (busybox form) - snapshot boot expects sd-btrfs-overlayfs here"
+  echo "        -> Restore:  sudo cp -a $BACKUP/mkinitcpio.conf.d/. /etc/mkinitcpio.conf.d/"
+else
+  warn "sd-btrfs-overlayfs missing - booting a snapshot may fail"
+  echo "        -> Only matters if you use limine-snapper-sync. Reinstall it to restore the drop-in:"
+  echo "           sudo pacman -S limine-snapper-sync"
+fi
 
-# There is NO "Hooks" line in lsinitcpio -a for a systemd image: sd-encrypt is a
+# --------------------------------------------------------------- 3
+# Shared by section 3 and the post-rebuild recheck, so the two can never diverge.
+# There is NO "Hooks" line in `lsinitcpio -a` for a systemd image: sd-encrypt is a
 # build-time hook that installs systemd-cryptsetup and its units, leaving no runtime
 # hook list. Grepping for one reports a false failure, which is worse than no check.
+check_image() { # check_image <path> <label> <phase>
+  local img="$1" label="$2" phase="$3" list
+  list=$(sudo lsinitcpio -l "$img" 2>/dev/null)
+  if [[ -z $list ]]; then
+    warn "$label: could not read image - NOT a failure, just uninspectable"
+    echo "        -> Try manually:  sudo lsinitcpio -l '$img' | head"
+    return 0
+  fi
+  if (( LUKS )); then
+    if [[ $EFF == *sd-encrypt* ]]; then
+      if grep -qE 'systemd-cryptsetup-generator|bin/systemd-cryptsetup' <<<"$list"; then
+        ok "$label: systemd-cryptsetup present$phase"
+      else
+        bad "$label: systemd-cryptsetup ABSENT$phase - root would not unlock" \
+            "DO NOT REBOOT." \
+            "Confirm by hand:  sudo lsinitcpio -l '$img' | grep -i cryptsetup" \
+            "If the config is right (section 2 passed), rebuild:  sudo limine-mkinitcpio" \
+            "If it is still absent, boot a snapper snapshot from the limine menu and restore" \
+            "  the pre-install state from $BACKUP"
+      fi
+      if grep -qE 'sysinit\.target\.wants/cryptsetup\.target' <<<"$list"; then
+        ok "$label: cryptsetup.target wired into sysinit.target.wants"
+      else
+        warn "$label: cryptsetup.target not in sysinit.target.wants"
+        echo "        -> Unlock may still work, but rebuild to be sure:  sudo limine-mkinitcpio"
+      fi
+    else
+      if grep -qE '(^|/)hooks/encrypt$' <<<"$list"; then
+        ok "$label: busybox encrypt hook present$phase"
+      else
+        bad "$label: no encryption hook found$phase" \
+            "DO NOT REBOOT." \
+            "Confirm:  sudo lsinitcpio -l '$img' | grep -E 'hooks/(encrypt|sd-encrypt)'" \
+            "Rebuild:  sudo mkinitcpio -P   (or sudo limine-mkinitcpio)"
+      fi
+    fi
+  fi
+  if [[ -n ${PLY_THEME:-} ]]; then
+    if grep -q "plymouth/themes/${PLY_THEME}/" <<<"$list"; then
+      ok "$label: plymouth theme '${PLY_THEME}' baked in"
+    else
+      warn "$label: plymouth theme '${PLY_THEME}' not in this image"
+      echo "        -> Cosmetic only: you get a text passphrase prompt, not a failure."
+      echo "           Bake it in with:  sudo limine-mkinitcpio"
+    fi
+  fi
+}
+
+find_images() {
+  sudo find /boot -maxdepth 4 \
+    \( -name 'initramfs*.img' -o -name 'initramfs' -o -name 'initrd' \) -type f 2>/dev/null | sort
+}
+
+hdr "3. Actual initramfs on disk"
+# Two layouts: classic mkinitcpio (/boot/initramfs-<kernel>.img) and kernel-install
+# (/boot/<entry-token>/<kernel>/initramfs). Images under a token that is not the
+# active one are orphans from a previous install - never booted, so not judged.
+ACTIVE_TOKEN=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null)
+mapfile -t IMGS < <(find_images)
 ORPHANS=()
 if (( ${#IMGS[@]} == 0 )); then
   warn "no initramfs found under /boot - cannot inspect (UKI-only setup?)"
+  echo "        -> Not necessarily a problem. Look for a .efi bundle instead:"
+  echo "           sudo find /boot -name '*.efi' -maxdepth 4"
   sudo ls -la /boot | sed 's/^/        /'
 else
   for img in "${IMGS[@]}"; do
     token=$(basename "$(dirname "$(dirname "$img")")")
     label="$(basename "$(dirname "$img")")"
     if [[ -n ${ACTIVE_TOKEN:-} && $token != "$ACTIVE_TOKEN" && ${#token} == 32 ]]; then
-      ORPHANS+=("$(dirname "$(dirname "$img")")")
-      continue
+      ORPHANS+=("$(dirname "$(dirname "$img")")"); continue
     fi
     printf '        %s  (%s)\n' "$img" "$(sudo stat -c %y "$img" | cut -d. -f1)"
-    LIST=$(sudo lsinitcpio -l "$img" 2>/dev/null)
-    if [[ -z $LIST ]]; then
-      warn "$label: could not read image - NOT a failure, just uninspectable"; continue
-    fi
-    if (( LUKS )); then
-      if [[ $EFF == *sd-encrypt* ]]; then
-        grep -qE 'systemd-cryptsetup-generator|bin/systemd-cryptsetup' <<<"$LIST" \
-          && ok "$label: systemd-cryptsetup present (sd-encrypt did its job)" \
-          || bad "$label: systemd-cryptsetup ABSENT - root would not unlock"
-        grep -qE 'sysinit\.target\.wants/cryptsetup\.target' <<<"$LIST" \
-          && ok "$label: cryptsetup.target wired into sysinit.target.wants" \
-          || warn "$label: cryptsetup.target not in sysinit.target.wants"
-      else
-        grep -qE '(^|/)hooks/encrypt$' <<<"$LIST" \
-          && ok "$label: busybox encrypt hook present" \
-          || bad "$label: no encryption hook found"
-      fi
-    fi
-    if [[ -n ${PLY_THEME:-} ]]; then
-      grep -q "plymouth/themes/${PLY_THEME}/" <<<"$LIST" \
-        && ok "$label: plymouth theme '${PLY_THEME}' baked in" \
-        || warn "$label: plymouth theme '${PLY_THEME}' not in this image (text prompt fallback)"
-    fi
+    check_image "$img" "$label" ""
   done
   if (( ${#ORPHANS[@]} )); then
     printf '        active entry token: %s\n' "${ACTIVE_TOKEN:-unknown}"
@@ -103,65 +202,143 @@ else
   fi
 fi
 
+# --------------------------------------------------------------- 4
 hdr "4. Kernel cmdline vs initramfs capability"
 echo "        $(cat /proc/cmdline)"
 if (( LUKS )); then
-  grep -q 'rd.luks.uuid=' /proc/cmdline && ok "cmdline uses systemd-style rd.luks.uuid=" \
-                                        || warn "cmdline does not use rd.luks.uuid="
+  if grep -q 'rd.luks.uuid=' /proc/cmdline; then
+    ok "cmdline uses systemd-style rd.luks.uuid="
+  else
+    warn "cmdline does not use rd.luks.uuid= but rd.luks is present"
+    echo "        -> Check which syntax your setup expects before changing hooks."
+  fi
   U=$(sed -n 's/.*rd.luks.uuid=\([0-9a-f-]*\).*/\1/p' /proc/cmdline)
-  sudo blkid | grep -qi "$U" && ok "LUKS UUID $U exists on disk" || bad "LUKS UUID $U not found"
+  if [[ -n $U ]] && sudo blkid | grep -qi "$U"; then
+    ok "LUKS UUID $U exists on disk"
+  elif [[ -n $U ]]; then
+    bad "LUKS UUID $U not found on any block device" \
+        "Your cmdline points at a device that is not present." \
+        "List what is there:  sudo blkid | grep crypto_LUKS" \
+        "Fix the UUID in your bootloader config, then:  sudo limine-update"
+  fi
 fi
 
+# --------------------------------------------------------------- 5
 hdr "5. Plymouth (renders the LUKS prompt)"
-T="$PLY_THEME"
-echo "        configured theme: ${T:-<none>}"
-if [[ -n $T ]]; then
-  [[ -d /usr/share/plymouth/themes/$T ]] && ok "theme '$T' exists on disk" \
-    || bad "theme '$T' NOT installed - plymouth may fail at the passphrase prompt"
+echo "        configured theme: ${PLY_THEME:-<none>}"
+if [[ -n ${PLY_THEME:-} ]]; then
+  if [[ -d /usr/share/plymouth/themes/$PLY_THEME ]]; then
+    ok "theme '$PLY_THEME' exists on disk"
+  else
+    bad "theme '$PLY_THEME' NOT installed - plymouth may fail at the passphrase prompt" \
+        "Pick an installed one:  ls /usr/share/plymouth/themes" \
+        "Set it:  sudo plymouth-set-default-theme <name>" \
+        "Then rebuild:  sudo limine-mkinitcpio" \
+        "You can still type your passphrase blind if this breaks - it is not fatal."
+  fi
 fi
 echo "        NOTE: the initramfs carries its own copy of plymouthd.conf + theme."
 echo "              A theme change only takes effect on the next initramfs rebuild,"
 echo "              at which point both are copied together."
 
+# --------------------------------------------------------------- 6
 hdr "6. Bootloader entries"
-for c in /boot/limine.conf /boot/EFI/limine/limine.conf /boot/limine.cfg; do
-  sudo test -e "$c" && { echo "        found $c"; sudo grep -cE '^/|^:' "$c" 2>/dev/null \
-    | xargs -I{} echo "        entries: {}"; break; }
+FOUND_CFG=""
+for c in /boot/limine.conf /boot/EFI/limine/limine.conf /boot/limine.cfg /boot/loader/loader.conf; do
+  if sudo test -e "$c"; then
+    FOUND_CFG="$c"; echo "        found $c"
+    echo "        entries: $(sudo grep -cE '^/|^:' "$c" 2>/dev/null || echo '?')"
+    break
+  fi
 done
-sudo test -d /boot/EFI && ok "EFI directory present" || warn "no /boot/EFI"
+if [[ -z $FOUND_CFG ]]; then
+  warn "no bootloader config found in the usual places"
+  echo "        -> Look manually:  sudo ls -la /boot /boot/EFI"
+fi
+if sudo test -d /boot/EFI; then ok "EFI directory present"; else warn "no /boot/EFI (BIOS boot?)"; fi
 
+# --------------------------------------------------------------- 7
 hdr "7. Rollback available"
 if command -v snapper >/dev/null; then
   N=$(sudo snapper -c root list 2>/dev/null | tail -n +3 | wc -l)
-  (( N > 0 )) && ok "$N snapper snapshots (bootable from the limine menu)" || warn "no snapshots"
+  if (( N > 0 )); then
+    ok "$N snapper snapshots (bootable from the limine menu)"
+  else
+    warn "no snapper snapshots"
+    echo "        -> Take one before changing anything:  sudo snapper -c root create -d 'manual'"
+  fi
+else
+  warn "snapper not installed - no snapshot rollback available"
+  echo "        -> Your config backups are still in $BACKUP"
 fi
 
+# --------------------------------------------------------------- 8
 if (( REBUILD )); then
   hdr "8. Regenerating initramfs (config verified above)"
   if (( FAIL > 0 )); then
-    bad "refusing to rebuild while checks are failing - fix them first"
+    bad "refusing to rebuild while checks are failing" \
+        "Rebuilding now would bake a broken configuration into the image you boot." \
+        "Fix the failures listed above, re-run without --rebuild until clean, then retry."
   else
+    RC=0
     if command -v limine-mkinitcpio >/dev/null && [[ ! -d /etc/mkinitcpio.d || -z $(ls -A /etc/mkinitcpio.d 2>/dev/null) ]]; then
       echo "        no mkinitcpio presets; this is a limine + kernel-install system"
-      sudo limine-mkinitcpio && ok "limine-mkinitcpio succeeded" || bad "limine-mkinitcpio FAILED - do not reboot"
+      sudo limine-mkinitcpio || RC=$?
+      if (( RC == 0 )); then ok "limine-mkinitcpio succeeded"
+      else bad "limine-mkinitcpio FAILED (exit $RC)" \
+               "DO NOT REBOOT - the image on disk may be half-written." \
+               "Read the output above for the failing hook." \
+               "Your previous images are unchanged unless it reported copying one." \
+               "Recover by booting a snapper snapshot from the limine menu."; fi
     else
-      sudo mkinitcpio -P && ok "mkinitcpio -P succeeded" || bad "mkinitcpio -P FAILED - do not reboot"
+      sudo mkinitcpio -P || RC=$?
+      if (( RC == 0 )); then ok "mkinitcpio -P succeeded"
+      else bad "mkinitcpio -P FAILED (exit $RC)" \
+               "DO NOT REBOOT." \
+               "Re-run verbosely to see why:  sudo mkinitcpio -P -v" \
+               "Recover by booting a snapper snapshot from the limine menu."; fi
     fi
-    mapfile -t IMGS < <(sudo find /boot -maxdepth 4 \
-      \( -name 'initramfs*.img' -o -name 'initramfs' -o -name 'initrd' \) -type f 2>/dev/null | sort)
-    if (( LUKS )) && command -v lsinitcpio >/dev/null; then
+    if (( RC == 0 )); then
+      # Re-scan: the rebuild may have written new paths.
+      mapfile -t IMGS < <(find_images)
       for img in "${IMGS[@]}"; do
-        sudo lsinitcpio -a "$img" 2>/dev/null | grep -qi 'sd-encrypt' \
-          && ok "$(basename "$img"): sd-encrypt present after rebuild" \
-          || bad "$(basename "$img"): sd-encrypt MISSING after rebuild - DO NOT REBOOT"
+        token=$(basename "$(dirname "$(dirname "$img")")")
+        [[ -n ${ACTIVE_TOKEN:-} && $token != "$ACTIVE_TOKEN" && ${#token} == 32 ]] && continue
+        check_image "$img" "$(basename "$(dirname "$img")")" " after rebuild"
       done
     fi
   fi
 fi
 
+# --------------------------------------------------------------- verdict
 printf '\n\033[1;34m== Verdict\033[0m\n'
 printf '  passed: %d   warnings: %d   failures: %d\n\n' "$PASS" "$WARN" "$FAIL"
 if (( FAIL > 0 )); then
-  printf '  \033[1;31mDO NOT REBOOT.\033[0m Paste this output for help.\n\n'; exit 1
+  printf '  \033[1;31mDO NOT REBOOT.\033[0m Everything that failed, and how to fix it:\n\n'
+  printf '    %s\n' "${FIXES[@]}"
+  cat <<EOF
+
+  General recovery, in increasing order of severity:
+
+    1. Re-run this script after each fix - it is read-only without --rebuild.
+    2. Restore the pre-install config:
+         sudo cp $BACKUP/mkinitcpio.conf /etc/mkinitcpio.conf
+         sudo cp -a $BACKUP/mkinitcpio.conf.d/. /etc/mkinitcpio.conf.d/
+         sudo cp $BACKUP/pacman.conf /etc/pacman.conf
+    3. Undo this project entirely:
+         ./uninstall-omarchy-on-cachyos.sh
+    4. Boot a pre-install snapshot from the limine menu (Snapshots submenu).
+
+  If you are reading this from a live USB, the backups are under
+  <your-home>/.local/share/omarchy-cachyos/ on the root subvolume.
+
+EOF
+  exit 1
 fi
-printf '  \033[1;32mSafe to reboot.\033[0m\n\n'
+if (( WARN > 0 )); then
+  printf '  \033[1;32mNo failures.\033[0m %d warning(s) above - nothing blocking, but read them:\n' "$WARN"
+  printf '  a warning means a check could not run, or found something non-fatal.\n'
+  printf '  Each one prints what to do about it.\n\n'
+else
+  printf '  \033[1;32mSafe to reboot.\033[0m Every check ran and passed.\n\n'
+fi

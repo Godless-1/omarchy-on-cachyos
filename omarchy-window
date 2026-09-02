@@ -159,7 +159,9 @@ unblock_shortcuts() {
   $QDBUS org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel.blockGlobalShortcuts false >/dev/null 2>&1 || true
 }
 grab_shortcuts() {
-  [[ -n ${QDBUS:-} ]] || { warn_no_grab=1; return 0; }
+  # Returning 0 here would make the caller print "KDE shortcuts yield to Omarchy"
+  # while nothing had been installed - a false success.
+  [[ -n ${QDBUS:-} ]] || return 1
   local js id
   js="${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-keys.js"
   cat > "$js" <<'JS'
@@ -183,7 +185,8 @@ if (( GRAB_KEYS )); then
   if grab_shortcuts; then
     KEYS="KDE shortcuts yield to Omarchy while this window is focused"
   else
-    KEYS="could not install the KWin key handover - Plasma will keep its Meta+ binds"
+    KEYS="could not install the KWin key handover - your desktop keeps its Meta+ binds"
+    KEYS_FIX=1
   fi
 fi
 
@@ -217,7 +220,18 @@ echo "Omarchy nested window: ${SIZE}"
 [[ -n ${RULED:-} ]] && echo "  KWin rule installed (exact position, no titlebar)"
 echo "  mode: $MODE"
 echo
-[[ -n ${KEYS:-} ]] && echo "  keys: $KEYS"
+if [[ -n ${KEYS:-} ]]; then
+  echo "  keys: $KEYS"
+  if [[ -n ${KEYS_FIX:-} ]]; then
+    cat <<'KEYSFIX'
+        Omarchy's Super+ bindings will be swallowed by your desktop. To fix:
+          - KDE: ensure qdbus is installed (pacman -S qt6-tools) and re-run.
+          - Other desktops: unbind the conflicting Super+ shortcuts, or run with
+            --no-key-grab to silence this and accept the conflict.
+        Nothing was changed on your system by the failed attempt.
+KEYSFIX
+  fi
+fi
 echo
 
 if (( DETACH )); then
