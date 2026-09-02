@@ -1,20 +1,22 @@
 pkgbase = omarchy-on-cachyos
 	pkgdesc = Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos
-	pkgver = 1.0.0
+	pkgver = 1.1.0
 	pkgrel = 1
 	url = https://github.com/Godless-1/omarchy-on-cachyos
 	install = omarchy-on-cachyos.install
 	arch = any
 	license = AGPL-3.0-or-later
 	license = CC-BY-SA-4.0
+	depends = bash
 	depends = python
+	depends = hicolor-icon-theme
 	optdepends = gum: styled menu for omarchy-on-cachyos
 	optdepends = omarchy: the desktop this manages
 	optdepends = hyprland: required for omarchy-window
 	optdepends = kscreen: exact work-area fitting for omarchy-window on KDE
 	optdepends = snapper: pre-install snapshots
 	optdepends = mkinitcpio: initramfs inspection in omarchy-verify-boot
-	source = omarchy-on-cachyos-1.0.0.tar.gz::https://github.com/Godless-1/omarchy-on-cachyos/archive/refs/tags/v1.0.0.tar.gz
-	sha256sums = 6bb09bf0ee0d9168af5d620c1e9fb70c75df3dedc8a64dc07cb40a28cec8f54f
+	source = omarchy-on-cachyos-1.1.0.tar.gz::https://github.com/Godless-1/omarchy-on-cachyos/archive/refs/tags/v1.1.0.tar.gz
+	sha256sums = bb9d51dd65fc506e59786c1b40f9e45cde462f91a23a9f1a6f70d1a505761124
 
 pkgname = omarchy-on-cachyos

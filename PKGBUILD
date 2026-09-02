@@ -9,10 +9,12 @@ pkgdesc="Run Omarchy in a window or as a login session beside your existing desk
 arch=('any')
 url="https://github.com/Godless-1/omarchy-on-cachyos"
 license=('AGPL-3.0-or-later' 'CC-BY-SA-4.0')
-# bash, curl and libarchive come with base/pacman, so per Arch packaging
-# guidelines they are not declared. python is not in base and is used to edit
-# pacman.conf and kwinrulesrc safely.
-depends=('python')
+# curl and libarchive arrive with base/pacman and are not declared. bash is
+# declared because namcap resolves the shebangs to it; hicolor-icon-theme owns
+# the directory hierarchy the icon is installed into; python is invoked from
+# heredocs to edit kwinrulesrc and pacman.conf structurally rather than with
+# fragile sed, which namcap cannot see from a static scan.
+depends=('bash' 'python' 'hicolor-icon-theme')
 optdepends=(
   'gum: styled menu for omarchy-on-cachyos'
   'omarchy: the desktop this manages'
@@ -23,7 +25,7 @@ optdepends=(
 )
 install=omarchy-on-cachyos.install
 source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP')  # replaced below once the tag exists
+sha256sums=('bb9d51dd65fc506e59786c1b40f9e45cde462f91a23a9f1a6f70d1a505761124')
 
 # Scripts keep their repository names in /usr/lib, and get short, prefixed
 # commands on PATH. Renaming them in place would break every reference in the
