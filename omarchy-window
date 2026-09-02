@@ -17,16 +17,44 @@
 
 set -euo pipefail
 
-SIZE=""; MODE=full; USE_RULE=1
+SIZE=""; MODE=full; USE_RULE=1; DETACH=0; INSTALL_DESKTOP=0; GRAB_KEYS=1
 while (($#)); do
   case "$1" in
     --bare) MODE=bare; shift ;;
     --no-rule) USE_RULE=0; shift ;;
+    --no-key-grab) GRAB_KEYS=0; shift ;;
+    --detach) DETACH=1; shift ;;
+    --install-desktop) INSTALL_DESKTOP=1; shift ;;
     -s|--size) SIZE="$2"; USE_RULE=0; shift 2 ;;
     -h|--help) sed -n '2,15p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
+
+if (( INSTALL_DESKTOP )); then
+  self=$(readlink -f "$0")
+  icon=/usr/share/omarchy/logo.svg
+  [[ -f $icon ]] || icon=/usr/share/omarchy/icon.png
+  dir="$HOME/.local/share/applications"; mkdir -p "$dir"
+  cat > "$dir/omarchy-window.desktop" <<EOF
+[Desktop Entry]
+Type=Application
+Name=Omarchy (in a window)
+Comment=Run the full Omarchy desktop in a window on this session
+Exec=$self --bare --detach
+Icon=$icon
+Terminal=false
+Categories=System;Utility;
+Keywords=omarchy;hyprland;
+StartupWMClass=aquamarine
+EOF
+  update-desktop-database "$dir" 2>/dev/null || true
+  echo "Installed $dir/omarchy-window.desktop"
+  echo "  icon:  $icon"
+  echo "  Launch it from your application menu - no terminal, and the panel entry"
+  echo "  now shows the Omarchy logo instead of a generic placeholder."
+  exit 0
+fi
 
 [[ -n ${WAYLAND_DISPLAY:-} ]] || { echo "Needs a Wayland session." >&2; exit 1; }
 command -v Hyprland >/dev/null || { echo "Hyprland not installed." >&2; exit 1; }
@@ -105,6 +133,49 @@ PY
   RULED=1
 fi
 
+# --- keyboard handover -----------------------------------------------------
+# KWin consumes Meta+... combinations it holds global shortcuts for before the
+# nested compositor is ever offered the key, which is most of Omarchy's keymap.
+# The clean protocol for this is zwp_keyboard_shortcuts_inhibit_v1, but the
+# Wayland backend does not request it - Hyprland only implements the server half
+# for its own clients. So we drive KWin from outside instead: a small KWin script
+# blocks KDE's global shortcuts while the nested window is focused and releases
+# them the moment it is not, so Plasma keeps working everywhere else.
+KWIN_SCRIPT_NAME=omarchy-window-keys
+unblock_shortcuts() {
+  [[ -n ${QDBUS:-} ]] || return 0
+  $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1 || true
+  $QDBUS org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel.blockGlobalShortcuts false >/dev/null 2>&1 || true
+}
+grab_shortcuts() {
+  [[ -n ${QDBUS:-} ]] || { warn_no_grab=1; return 0; }
+  local js id
+  js="${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-keys.js"
+  cat > "$js" <<'JS'
+function omarchyUpdate(w) {
+  var on = false;
+  try { on = !!(w && w.resourceClass &&
+                String(w.resourceClass).toLowerCase().indexOf("aquamarine") === 0); } catch (e) {}
+  callDBus("org.kde.kglobalaccel", "/kglobalaccel", "org.kde.KGlobalAccel",
+           "blockGlobalShortcuts", on);
+}
+workspace.windowActivated.connect(omarchyUpdate);
+omarchyUpdate(workspace.activeWindow);
+JS
+  $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript "$KWIN_SCRIPT_NAME" >/dev/null 2>&1 || true
+  id=$($QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.loadScript "$js" "$KWIN_SCRIPT_NAME" 2>/dev/null) || return 1
+  $QDBUS org.kde.KWin "/Scripting/Script$id" org.kde.kwin.Script.run >/dev/null 2>&1 || return 1
+  return 0
+}
+
+if (( GRAB_KEYS )); then
+  if grab_shortcuts; then
+    KEYS="KDE shortcuts yield to Omarchy while this window is focused"
+  else
+    KEYS="could not install the KWin key handover - Plasma will keep its Meta+ binds"
+  fi
+fi
+
 # --- generate the nested config -------------------------------------------
 CFG="$(mktemp -d)/nested.lua"
 trap 'rm -rf "$(dirname "$CFG")"' EXIT
@@ -135,4 +206,22 @@ echo "Omarchy nested window: ${SIZE}"
 [[ -n ${RULED:-} ]] && echo "  KWin rule installed (exact position, no titlebar)"
 echo "  mode: $MODE"
 echo
-exec Hyprland -c "$CFG"
+[[ -n ${KEYS:-} ]] && echo "  keys: $KEYS"
+echo
+
+if (( DETACH )); then
+  keep="${XDG_RUNTIME_DIR:-/tmp}/omarchy-window-$$.lua"
+  cp "$CFG" "$keep"
+  # The cleanup must follow Hyprland, not this shell, or the shortcuts stay
+  # blocked after the window closes.
+  setsid bash -c "Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null
+    $QDBUS org.kde.KWin /Scripting org.kde.kwin.Scripting.unloadScript $KWIN_SCRIPT_NAME >/dev/null 2>&1
+    $QDBUS org.kde.kglobalaccel /kglobalaccel org.kde.KGlobalAccel.blockGlobalShortcuts false >/dev/null 2>&1
+    rm -f '$keep'" >/dev/null 2>&1 &
+  echo "Started in the background (pid $!)."
+  exit 0
+fi
+
+trap unblock_shortcuts EXIT INT TERM
+Hyprland -c "$CFG"
+unblock_shortcuts

@@ -17,6 +17,10 @@ set -euo pipefail
 MARKER="OMARCHY-BLOCKED-GUARD"
 VAULT=/usr/local/share/omarchy-blocked
 PACCONF=/etc/pacman.conf
+# Omarchy's pre-transaction hook aborts any direct `pacman -Syu` and directs you
+# to `omarchy update`, which this script blocks. Left in place the two deadlock,
+# and the system cannot be updated at all.
+HOOK=/usr/share/libalpm/hooks/00-omarchy-update-guard.hook
 TARGETS=(
   /usr/bin/omarchy-update
   /usr/bin/omarchy-refresh-pacman
@@ -61,8 +65,14 @@ if [[ ${1:-} == "--undo" ]]; then
       warn "no backup for $t (reinstall with: sudo pacman -S omarchy)"
     fi
   done
+  if [[ -f $VAULT/update-guard.hook ]]; then
+    log "Restoring $HOOK"
+    sudo install -m 0644 "$VAULT/update-guard.hook" "$HOOK"
+  fi
+
   log "Removing the NoExtract entries"
   sudo sed -i -E '/^NoExtract = usr\/(bin|share\/omarchy\/bin)\/omarchy-(update|refresh-pacman)$/d' "$PACCONF"
+  sudo sed -i '\|^NoExtract = usr/share/libalpm/hooks/00-omarchy-update-guard.hook$|d' "$PACCONF"
   log "Done. The commands are live again."
   exit 0
 fi
@@ -161,9 +171,20 @@ for t in "${TARGETS[@]}"; do
 done
 rm -f "$tmp"
 
+log "Neutralising the pacman update-guard hook"
+if [[ -f $HOOK ]]; then
+  sudo cp -a "$HOOK" "$VAULT/update-guard.hook"
+  sudo rm -f "$HOOK"
+  echo "  removed $HOOK (stashed in $VAULT)"
+  echo "  plain 'sudo pacman -Syu' works again"
+else
+  echo "  already absent"
+fi
+
 log "Adding NoExtract entries so pacman never restores the originals"
 for p in usr/bin/omarchy-update usr/bin/omarchy-refresh-pacman \
-         usr/share/omarchy/bin/omarchy-update usr/share/omarchy/bin/omarchy-refresh-pacman; do
+         usr/share/omarchy/bin/omarchy-update usr/share/omarchy/bin/omarchy-refresh-pacman \
+         usr/share/libalpm/hooks/00-omarchy-update-guard.hook; do
   if grep -qxF "NoExtract = $p" "$PACCONF"; then
     echo "  already present: $p"
   else

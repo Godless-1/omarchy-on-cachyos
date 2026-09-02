@@ -40,6 +40,9 @@ declare -a GUARDS=(
   "usr/bin/omarchy-refresh-pacman"
   "usr/share/omarchy/bin/omarchy-update"
   "usr/share/omarchy/bin/omarchy-refresh-pacman"
+  # Aborts every direct `pacman -Syu` and tells you to run `omarchy update`,
+  # which we block. Without this guard the two deadlock each other.
+  "usr/share/libalpm/hooks/00-omarchy-update-guard.hook"
 )
 
 # Packages from omarchy-base.packages to skip on this host.
