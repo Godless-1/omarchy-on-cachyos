@@ -112,6 +112,14 @@ Hyprland's Aquamarine backend runs nested when `WAYLAND_DISPLAY` is set, so the 
 desktop can run **in a window on the session you are already using** — same machine, same
 filesystem, nothing to share between them:
 
+This is the point of it, and it is worth saying plainly: **a tiling compositor has a real
+learning curve, and this lets you climb it without betting your working day on it.** Omarchy
+lives in a window you can learn in, get stuck in, and close — and your familiar desktop is
+still right there, still logged in, with your browser tabs and your editor exactly where you
+left them. No logout, no reboot, no "how do I even get out of this". When the keybindings
+start feeling like muscle memory rather than a puzzle, the login session is waiting for you
+at full resolution. Until then, there is nothing to commit to.
+
 ```bash
 ./omarchy-window --bare
 ```
@@ -134,9 +142,15 @@ so the menu and bar work.
 | Key | Action |
 | --- | --- |
 | <kbd>Super</kbd>+<kbd>Space</kbd> | Omarchy menu |
-| <kbd>Super</kbd>+<kbd>K</kbd> | Omarchy's own keybinding cheatsheet |
-| <kbd>Super</kbd>+<kbd>Q</kbd> | Terminal |
-| <kbd>Super</kbd>+<kbd>Escape</kbd> | Exit the nested session |
+| <kbd>Super</kbd>+<kbd>K</kbd> | Omarchy's own keybinding cheatsheet — the authority, not this table |
+| <kbd>Super</kbd>+<kbd>Return</kbd> | Terminal |
+| <kbd>Super</kbd>+<kbd>W</kbd> | Close window |
+| <kbd>Super</kbd>+<kbd>Escape</kbd> | System menu (lock, restart, log out) |
+| <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>A</kbd> | Coding agent in a terminal |
+
+<kbd>Super</kbd>+<kbd>Q</kbd> is **not** bound in Omarchy 4 — if you are reaching for it to close
+a window, that is <kbd>Super</kbd>+<kbd>W</kbd>. To close the whole nested session, close the
+window itself.
 
 ---
 

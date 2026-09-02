@@ -11,6 +11,18 @@
 #
 # Add --dry-run to suppress or restore to see the plan without touching a thing.
 #
+# More than one nested window can be open at once, and each wants the same keys.
+# So the borrow is reference counted: `suppress --claim PID` records a holder,
+# `restore --release PID` drops one and only hands the keys back when the last
+# holder is gone. Without that, closing one window took the keys away from every
+# other window still using them.
+#
+# A holder is a pid plus that process's start time, so a recycled pid cannot be
+# mistaken for a session that is still alive. Dead holders are pruned on every
+# operation, which is what makes a killed session self-healing. A bare `restore`
+# ignores holders entirely and puts everything back - that is the escape hatch,
+# and it is what the menu offers.
+#
 # Why not blockGlobalShortcuts, which is what this replaced: it is all or
 # nothing. It also silences Super on its own - KWin's modifier-only launcher
 # shortcut - and Alt+Tab, neither of which Omarchy uses and both of which you
@@ -37,11 +49,16 @@ set -euo pipefail
 BACKUP="${OC_KDE_SHORTCUT_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/kde-shortcuts.backup.json}"
 DRYRUN=0
 ACTION=""
+HOLDER=""
 
 while (($#)); do
   case "$1" in
     suppress | restore | status) ACTION="$1"; shift ;;
     --dry-run) DRYRUN=1; shift ;;
+    --claim | --release)
+      HOLDER="${2:?$1 needs a pid}"
+      [[ $HOLDER =~ ^[0-9]+$ ]] || { echo "$1 needs a pid, got: $HOLDER" >&2; exit 1; }
+      shift 2 ;;
     -h | --help) sed -n '2,12p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
@@ -64,14 +81,56 @@ if ! gdbus call -e -d org.kde.kglobalaccel -o /kglobalaccel \
   exit 1
 fi
 
-BACKUP="$BACKUP" DRYRUN="$DRYRUN" python3 - "$ACTION" <<'PY'
+BACKUP="$BACKUP" DRYRUN="$DRYRUN" HOLDER="$HOLDER" python3 - "$ACTION" <<'PY'
 import ast, json, os, subprocess, sys, tempfile
 from datetime import datetime, timezone
 
 ACTION = sys.argv[1]
 BACKUP = os.environ["BACKUP"]
 DRYRUN = os.environ["DRYRUN"] == "1"
+HOLDER = os.environ.get("HOLDER") or ""
 META = 0x10000000
+
+
+def proc_start(pid):
+    """That process's start time, or None if it is not running.
+
+    Paired with the pid this identifies one specific process: a pid that has
+    been recycled since the claim will not match, so a dead session can never
+    be mistaken for a live one and hold the keys hostage.
+    """
+    try:
+        with open(f"/proc/{int(pid)}/stat") as f:
+            stat = f.read()
+    except (OSError, ValueError):
+        return None
+    # comm sits in parentheses and may itself contain spaces or ')', so split
+    # on the LAST ')' rather than on whitespace.
+    fields = stat[stat.rfind(")") + 2:].split()
+    return fields[19] if len(fields) > 19 else None
+
+
+def tracked(data):
+    """Whether this backup records holders at all.
+
+    A v1 backup written before reference counting has no holders key. That is
+    "unknown", not "nobody" - reading it as nobody would report a false fault,
+    or hand back keys that windows opened by the older version are still using.
+    """
+    return data.get("holders") is not None
+
+
+def live_holders(holders):
+    """Drop holders whose process is gone. This is the self-healing step."""
+    alive = []
+    for h in holders or []:
+        try:
+            pid, start = int(h["pid"]), h.get("start")
+        except (TypeError, ValueError, KeyError):
+            continue
+        if proc_start(pid) == start:
+            alive.append({"pid": pid, "start": start})
+    return alive
 
 # Qt packs the modifiers into the high bits of the key combination; the low bits
 # are the key itself. We only care whether the Meta bit is lit.
@@ -142,11 +201,12 @@ def scan():
     return found
 
 
-def write_backup(entries):
+def write_backup(entries, holders=None):
     os.makedirs(os.path.dirname(BACKUP) or ".", exist_ok=True)
     payload = {
-        "version": 1,
+        "version": 2,
         "saved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "holders": holders or [],
         "entries": entries,
     }
     # Write and fsync a temporary file in the same directory, then rename, so a
@@ -186,7 +246,18 @@ if ACTION == "status":
         print("KDE shortcuts: nothing suppressed, everything is as you left it.")
         sys.exit(0)
     entries = data["entries"]
+    holders = live_holders(data.get("holders"))
     print(f"KDE shortcuts: {len(entries)} action(s) suppressed since {data.get('saved_at', '?')}")
+    if not tracked(data):
+        print("  Written before holder tracking, so whether a window still needs")
+        print("  them cannot be told from here. It will sort itself out once every")
+        print("  window open at the time has been closed.")
+    elif holders:
+        print(f"  held by {len(holders)} live session(s): "
+              + ", ".join(f"pid {h['pid']}" for h in holders))
+        print("  They come back on their own when the last one closes.")
+    else:
+        print("  No session is holding them - one was killed before it could hand them back.")
     print(f"  backup: {BACKUP}")
     for e in entries[:8]:
         print(f"    {e['id'][0]}/{e['id'][1]}: {', '.join(human(k) for k in e['keys'])}")
@@ -196,11 +267,32 @@ if ACTION == "status":
     sys.exit(1)
 
 if ACTION == "suppress":
-    if read_backup():
-        print("Already suppressed - a backup is on disk. Restore before suppressing again.",
-              file=sys.stderr)
-        print("  -> omarchy-window-shortcuts restore", file=sys.stderr)
-        sys.exit(1)
+    me = {"pid": int(HOLDER), "start": proc_start(HOLDER)} if HOLDER else None
+    if me and not me["start"]:
+        me = None  # claimed on behalf of a process that is already gone
+
+    data = read_backup()
+    if data:
+        # Never rescan while a backup exists. The live state is already
+        # suppressed, so a rescan would record those suppressed values as the
+        # "originals" and the real ones would be gone for good.
+        entries = data["entries"]
+        holders = live_holders(data.get("holders"))
+        if me and not any(h["pid"] == me["pid"] for h in holders):
+            holders.append(me)
+        if DRYRUN:
+            print(f"[dry-run] {len(entries)} binding(s) already borrowed by {len(holders)} session(s);"
+                  f" would join as holder {HOLDER or '(none)'}")
+            sys.exit(0)
+        write_backup(entries, holders)
+        # Re-apply idempotently: a previous session may have died part-way
+        # through, and this costs nothing when it did not.
+        for e in entries:
+            set_keys(e["id"], e["kept"])
+        print(f"Joined an existing borrow of {len(entries)} binding(s);"
+              f" {len(holders)} session(s) now holding.")
+        sys.exit(0)
+
     entries = scan()
     if not entries:
         print("Nothing to do: no Meta+ shortcuts are bound in KDE.")
@@ -214,7 +306,7 @@ if ACTION == "suppress":
             print(f"    {e['id'][0]}/{e['id'][1]}: drop {', '.join(dropped)}{tail}")
         sys.exit(0)
     # The backup lands on disk before the first shortcut changes, never after.
-    write_backup(entries)
+    write_backup(entries, [me] if me else [])
     failed = [e for e in entries if not set_keys(e["id"], e["kept"])]
     freed = len(entries) - len(failed)
     print(f"Freed {freed} Meta+ binding(s) for Omarchy. Super on its own and Alt+Tab still belong to Plasma.")
@@ -233,6 +325,21 @@ if ACTION == "restore":
         print("Nothing to restore - no backup on disk.")
         sys.exit(0)
     entries = data["entries"]
+
+    # A release is one session stepping back, not a decision for the others.
+    # A bare `restore` skips this entirely and puts everything back - that is
+    # the escape hatch the menu offers.
+    if HOLDER:
+        holders = [h for h in live_holders(data.get("holders")) if h["pid"] != int(HOLDER)]
+        if holders:
+            if DRYRUN:
+                print(f"[dry-run] would step back, leaving {len(holders)} session(s) holding;"
+                      " the keys would stay borrowed")
+                sys.exit(0)
+            write_backup(entries, holders)
+            print(f"Stepped back; {len(holders)} session(s) still holding, so the keys stay borrowed.")
+            sys.exit(0)
+
     if DRYRUN:
         print(f"[dry-run] would give {len(entries)} binding(s) back to Plasma:")
         for e in entries:

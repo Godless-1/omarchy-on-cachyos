@@ -5,6 +5,24 @@ SPDX-License-Identifier: CC-BY-SA-4.0
 
 # The nested window
 
+## What it is for
+
+Running Omarchy in a window is not a degraded mode of the login session. It exists so that
+learning Hyprland costs you nothing you cannot walk away from.
+
+A tiling compositor asks you to relearn how you open a terminal, move between windows and
+place things on screen. Done as a login session, that means every one of those small
+frustrations arrives while it is also the only desktop you have — and the escape hatch is a
+logout. In a window, the escape hatch is moving the mouse. Your usual session is still
+running behind it, still logged in, tabs and editor untouched.
+
+So the window is where you build the muscle memory, and the login session is where you use
+it once you have. The same install gives you both; nothing has to be decided up front.
+
+Two consequences worth knowing, both covered below: the nested session has to be *given*
+Omarchy's keyboard shortcuts, because your host desktop claims most of them first, and
+anything Omarchy launches has to be kept inside the window rather than escaping to the host.
+
 ## Why this works
 
 Hyprland's Aquamarine backend selects a **Wayland backend** when `WAYLAND_DISPLAY` is set,
@@ -178,6 +196,28 @@ a boolean, so the keys are instead lent for as long as the window is open.
 The visible cost: while an Omarchy window is open but *not* focused, Plasma's
 <kbd>Meta</kbd>+<kbd>key</kbd> shortcuts do nothing. Everything else — <kbd>Super</kbd>,
 <kbd>Alt</kbd>+<kbd>Tab</kbd>, media keys, <kbd>Print</kbd> — is unaffected.
+
+### More than one window at a time
+
+Each nested window wants the same Meta+ keys, so the borrow is **reference counted**. A
+window claims when it opens and releases when it closes, and the keys go back to Plasma only
+when the last holder lets go. Before that, the first window to close handed everything back
+while the others were still using them — their Omarchy bindings simply stopped responding,
+with nothing on screen to say why.
+
+A holder is a pid *plus that process's start time*, so a recycled pid cannot be mistaken for
+a session that is still running. Dead holders are pruned on every operation, which is what
+makes a killed session heal instead of stranding the keys:
+
+```bash
+omarchy-window-shortcuts suppress --claim $$    # a window opening
+omarchy-window-shortcuts restore --release $$   # a window closing
+omarchy-window-shortcuts restore                # the escape hatch: ignores holders
+```
+
+`suppress` never re-scans while a backup exists. The live state is already suppressed, so a
+re-scan would record the *suppressed* values as if they were the originals, and the real ones
+would be gone for good.
 
 ### If a session dies without handing them back
 

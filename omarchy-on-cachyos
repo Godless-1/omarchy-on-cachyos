@@ -150,9 +150,30 @@ diagnose() {
   local kbak n
   kbak="${OC_KDE_SHORTCUT_BACKUP:-${XDG_DATA_HOME:-$HOME/.local/share}/omarchy-cachyos/kde-shortcuts.backup.json}"
   if [[ -f $kbak ]]; then
-    n=$(python3 -c 'import json,sys
-try: print(len(json.load(open(sys.argv[1]))["entries"]))
-except Exception: print("some")' "$kbak" 2>/dev/null) || n="some"
+    # A live window holding the keys is the feature working, not a fault. Only
+    # report when no holder is still running. Prints the count, or nothing at
+    # all when someone is legitimately holding them.
+    n=$(python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    print("some"); raise SystemExit
+def alive(h):
+    try:
+        s = open("/proc/%d/stat" % int(h["pid"])).read()
+    except Exception:
+        return False
+    f = s[s.rfind(")") + 2:].split()
+    return len(f) > 19 and f[19] == h.get("start")
+holders = d.get("holders")
+# No holders key means it predates holder tracking: unknown, not unheld. Saying
+# nothing beats telling someone to reclaim keys their open windows are using.
+if holders is None or any(alive(h) for h in holders):
+    raise SystemExit
+print(len(d.get("entries") or []))' "$kbak" 2>/dev/null) || n="some"
+  fi
+  if [[ -f $kbak && -n ${n:-} ]]; then
     add HIGH shortcuts \
       "KDE is missing $n keyboard shortcut(s) a windowed Omarchy session borrowed" \
       "The window hands them back when it closes; this one was killed before it could. Super on its own and Alt+Tab are not affected - those are never borrowed - but the Meta+ combinations are inert until they go back. Restoring is exact: every original is in the backup, and KDE's own defaults were never touched either way." \

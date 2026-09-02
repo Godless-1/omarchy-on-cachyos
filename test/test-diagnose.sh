@@ -44,15 +44,27 @@ new_root() {
 # HOME rather than wherever the machine running the tests keeps its own.
 check() { OC_ROOT="$1" HOME="$1/home" XDG_DATA_HOME='' "$TOOL" check 2>&1; }
 
-# Leave a shortcut backup behind, as a killed omarchy-window session would.
-stale_shortcuts() { # stale_shortcuts <root> <entry-count>
-  local d="$1/home/.local/share/omarchy-cachyos" i n="$2" e=""
+# Leave a shortcut backup behind. `holders` is the JSON for that field: "[]" is
+# an abandoned borrow (a killed session), a live pid means a window still needs
+# the keys, and omitting the field entirely is a backup written before holder
+# tracking existed.
+stale_shortcuts() { # stale_shortcuts <root> <entry-count> [holders-json]
+  local d="$1/home/.local/share/omarchy-cachyos" i n="$2" e="" h="${3-[]}"
   mkdir -p "$d"
   for ((i = 0; i < n; i++)); do
     e+="{\"id\":[\"kwin\",\"a$i\",\"\",\"\"],\"keys\":[268435527],\"kept\":[]},"
   done
-  printf '{"version":1,"saved_at":"now","entries":[%s]}' "${e%,}" \
-    > "$d/kde-shortcuts.backup.json"
+  if [[ $h == omit ]]; then
+    printf '{"version":1,"saved_at":"now","entries":[%s]}' "${e%,}"
+  else
+    printf '{"version":2,"saved_at":"now","holders":%s,"entries":[%s]}' "$h" "${e%,}"
+  fi > "$d/kde-shortcuts.backup.json"
+}
+
+# A holders entry for a process that really is running: this shell.
+live_holder() {
+  local s; s=$(</proc/$$/stat)
+  printf '[{"pid":%d,"start":"%s"}]' "$$" "$(awk '{print $20}' <<<"${s#*") "}")"
 }
 
 expect()     { local d="$1" w="$2" o="$3"; if grep -qF "$w" <<<"$o"; then ok "$d"; else
@@ -112,6 +124,16 @@ expect "still reports an unreadable shortcut backup" \
 
 R=$(new_root)
 expect_not "a healthy tree says nothing about shortcuts" \
+  "keyboard shortcut" "$(check "$R")"; rm -rf "$R"
+
+# Borrowed keys are the feature working. Reporting a fault there would send
+# someone to reclaim shortcuts their open windows are still using.
+R=$(new_root); stale_shortcuts "$R" 3 "$(live_holder)"
+expect_not "stays quiet while a live window still holds the keys" \
+  "keyboard shortcut" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); stale_shortcuts "$R" 3 omit
+expect_not "stays quiet for a backup predating holder tracking" \
   "keyboard shortcut" "$(check "$R")"; rm -rf "$R"
 
 printf '\n\033[1;34m== severity ordering\033[0m\n'

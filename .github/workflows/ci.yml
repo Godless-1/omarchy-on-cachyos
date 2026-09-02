@@ -51,6 +51,8 @@ jobs:
         run: ./test/test-diagnose.sh
       - name: Run the uwsm-app shim test suite
         run: ./test/test-uwsm-shim.sh
+      - name: Run the shortcut reference-counting test suite
+        run: ./test/test-shortcut-holders.sh
 
   package:
     name: makepkg + namcap

@@ -13,7 +13,8 @@
 #   omarchy-window -s 1400x800  # explicit size, skips the KWin rule
 #   omarchy-window --no-rule    # don't touch KWin rules
 #
-# Exit with SUPER+ESCAPE, or close the window.
+# Close the window to end the session. SUPER+ESCAPE opens Omarchy's system menu;
+# SUPER+W closes a window inside it. SUPER+K lists every binding.
 
 set -euo pipefail
 
@@ -167,17 +168,18 @@ SHORTCUTS=$(command -v omarchy-window-shortcuts 2>/dev/null || true)
 [[ -n $SHORTCUTS ]] || SHORTCUTS="$(dirname "$(readlink -f "$0")")/omarchy-window-shortcuts"
 unblock_shortcuts() {
   [[ -x $SHORTCUTS ]] || return 0
-  "$SHORTCUTS" restore >/dev/null 2>&1 || true
+  # --release, not a bare restore: another window may still be open and using
+  # these keys. The keys go back only when the last holder lets go.
+  "$SHORTCUTS" restore --release $$ >/dev/null 2>&1 || true
 }
 grab_shortcuts() {
   # Returning 0 here would make the caller print that Omarchy has the keys
   # while nothing had been changed - a false success.
   [[ -x $SHORTCUTS ]] || return 1
-  # A run that was killed before it could hand the keys back leaves its backup
-  # behind, and suppress refuses to run twice over its own backup. Replay it
-  # first so a crashed session self-heals instead of blocking every later one.
-  "$SHORTCUTS" restore >/dev/null 2>&1 || true
-  "$SHORTCUTS" suppress >/dev/null 2>&1
+  # Claiming rather than restore-then-suppress. suppress joins an existing
+  # borrow when one is live, and prunes holders whose process is gone, so a
+  # session that was killed heals instead of stranding the keys.
+  "$SHORTCUTS" suppress --claim $$ >/dev/null 2>&1
 }
 
 if (( GRAB_KEYS )); then
@@ -301,8 +303,13 @@ if (( DETACH )); then
   # The cleanup must follow Hyprland, not this shell, or Plasma never gets its
   # Meta+ keys back after the window closes. The shim has to outlive this shell
   # too - the nested session resolves it on every launch, not just at startup.
-  setsid bash -c "Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null
-    '$SHORTCUTS' restore >/dev/null 2>&1
+  # \$\$ expands inside the background shell (its own pid); $$ expands now (this
+  # one's). The background claims itself BEFORE releasing this shell's claim, so
+  # there is no instant where nobody holds the keys and they snap back to Plasma.
+  setsid bash -c "'$SHORTCUTS' suppress --claim \$\$ >/dev/null 2>&1
+    '$SHORTCUTS' restore --release $$ >/dev/null 2>&1
+    Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null
+    '$SHORTCUTS' restore --release \$\$ >/dev/null 2>&1
     rm -f '$keep'
     rm -rf '$SHIMDIR'" >/dev/null 2>&1 &
   echo "Started in the background (pid $!)."
