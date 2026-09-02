@@ -3,7 +3,7 @@
 # Maintainer: Godless-1 <19769978+Godless-1@users.noreply.github.com>
 
 pkgname=omarchy-on-cachyos
-pkgver=1.4.0
+pkgver=1.4.1
 pkgrel=1
 pkgdesc="Run Omarchy in a window or as a login session beside your existing desktop, without touching your bootloader, initramfs or repos"
 arch=('any')
@@ -25,8 +25,15 @@ optdepends=(
   'mkinitcpio: initramfs inspection in omarchy-verify-boot'
 )
 install=omarchy-on-cachyos.install
-source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('5d5dee99c1fd928956cfec6517c80e875b5d5907b013ff8d1996c8cf1afa1ebd')
+makedepends=('git')
+# Sourced from the tag in this repository rather than GitHub's generated tarball.
+# A tarball checksum cannot live in the tarball it describes: the commit that
+# pinned it changed the tree, so the PKGBUILD *inside* every tag up to v1.4.0
+# carried a hash that could never match, and checking out a tag failed to build.
+# A tag ref has no such loop - git verifies the objects it fetches, and the
+# release is reproducible from the tag alone.
+source=("$pkgname::git+$url.git#tag=v$pkgver")
+sha256sums=('SKIP')
 
 # Scripts keep their repository names in /usr/lib, and get short, prefixed
 # commands on PATH. Renaming them in place would break every reference in the
@@ -48,7 +55,7 @@ _cmds=(
 )
 
 package() {
-  cd "$pkgname-$pkgver"
+  cd "$pkgname"
 
   install -dm755 "$pkgdir$_libdir"
   for f in omarchy-on-cachyos omarchy-window omarchy-window-shortcuts *.sh; do
