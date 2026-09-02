@@ -53,6 +53,8 @@ jobs:
         run: ./test/test-uwsm-shim.sh
       - name: Run the shortcut reference-counting test suite
         run: ./test/test-shortcut-holders.sh
+      - name: Run the session watchdog test suite
+        run: ./test/test-window-watchdog.sh
 
   package:
     name: makepkg + namcap

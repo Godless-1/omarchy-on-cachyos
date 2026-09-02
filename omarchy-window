@@ -18,9 +18,61 @@
 
 set -euo pipefail
 
+SELF=$(readlink -f "$0")
+
+# --- end the session when its window is closed ------------------------------
+# Hyprland does not exit when its last output goes away. Closing the nested
+# window leaves it running headless on a synthetic monitor named FALLBACK -
+# a live session reports WAYLAND-1, an orphaned one reports FALLBACK - so every
+# launch used to leave a compositor running for good. They accumulate silently:
+# seven at once on the machine this was found on.
+#
+# Each instance records its pid in hyprland.lock, so this finds the instance
+# belonging to *this* Hyprland rather than assuming the newest one, which would
+# pick the wrong session the moment two windows are opened together.
+watch_for_close() { # watch_for_close <hyprland-pid>
+  local pid="$1" sig="" f real armed=0 i
+  for ((i = 0; i < 100; i++)); do
+    for f in "${XDG_RUNTIME_DIR:-/run/user/$UID}"/hypr/*/hyprland.lock; do
+      [[ -r $f ]] || continue
+      if [[ $(cut -d' ' -f1 "$f" 2>/dev/null) == "$pid" ]]; then
+        sig=$(basename "$(dirname "$f")"); break 2
+      fi
+    done
+    sleep 0.2
+  done
+  # No instance found: say nothing and leave the session alone rather than
+  # guessing at which compositor to shut down.
+  [[ -n $sig ]] || return 0
+
+  while kill -0 "$pid" 2>/dev/null; do
+    sleep 2
+    real=$(HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl monitors -j 2>/dev/null | python3 -c '
+import json, sys
+try:
+    print(sum(1 for m in json.load(sys.stdin) if m.get("name") != "FALLBACK"))
+except Exception:
+    pass' 2>/dev/null)
+    # An empty answer is hyprctl failing to reply, not a closed window. Acting
+    # on it would kill a perfectly healthy session on a transient hiccup.
+    [[ -n $real ]] || continue
+    # Only arm once a real output has been seen: at startup there is a moment
+    # before the nested output exists, and exiting there would kill the session
+    # as it came up.
+    (( real > 0 )) && { armed=1; continue; }
+    (( armed )) || continue
+    HYPRLAND_INSTANCE_SIGNATURE=$sig hyprctl dispatch exit >/dev/null 2>&1
+    sleep 3
+    kill -0 "$pid" 2>/dev/null && kill -TERM "$pid" 2>/dev/null
+    return 0
+  done
+}
+
 SIZE=""; MODE=full; USE_RULE=1; DETACH=0; INSTALL_DESKTOP=0; GRAB_KEYS=1
 while (($#)); do
   case "$1" in
+    # Internal: run the watchdog for an already-started compositor.
+    --watch-close) watch_for_close "${2:?--watch-close needs a pid}"; exit 0 ;;
     --bare) MODE=bare; shift ;;
     --no-rule) USE_RULE=0; shift ;;
     --no-key-grab) GRAB_KEYS=0; shift ;;
@@ -34,6 +86,14 @@ done
 
 if (( INSTALL_DESKTOP )); then
   self=$(readlink -f "$0")
+  # Prefer the command on PATH when it resolves to this same script, so the entry
+  # follows package upgrades. Writing the absolute path pins whichever copy
+  # happened to run --install-desktop - a working checkout, say - and then
+  # upgrading the package silently never changes what the launcher starts.
+  onpath=$(command -v omarchy-window 2>/dev/null || true)
+  if [[ -n $onpath && $(readlink -f "$onpath") == "$self" ]]; then
+    self=omarchy-window
+  fi
   # icon.png is 300x300. logo.svg is a 1215x285 wordmark - a panel slot is square,
   # so the wordmark scales down into what looks like a horizontal line.
   src=/usr/share/omarchy/icon.png
@@ -308,7 +368,12 @@ if (( DETACH )); then
   # there is no instant where nobody holds the keys and they snap back to Plasma.
   setsid bash -c "'$SHORTCUTS' suppress --claim \$\$ >/dev/null 2>&1
     '$SHORTCUTS' restore --release $$ >/dev/null 2>&1
-    Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null
+    Hyprland -c '$keep' >/dev/null 2>&1 < /dev/null &
+    hp=\$!
+    '$SELF' --watch-close \$hp >/dev/null 2>&1 &
+    wd=\$!
+    wait \$hp
+    kill \$wd 2>/dev/null
     '$SHORTCUTS' restore --release \$\$ >/dev/null 2>&1
     rm -f '$keep'
     rm -rf '$SHIMDIR'" >/dev/null 2>&1 &
@@ -319,5 +384,10 @@ if (( DETACH )); then
   exit 0
 fi
 
-Hyprland -c "$CFG"
+Hyprland -c "$CFG" &
+HYPR_PID=$!
+"$SELF" --watch-close "$HYPR_PID" >/dev/null 2>&1 &
+WATCHDOG=$!
+wait "$HYPR_PID"
+kill "$WATCHDOG" 2>/dev/null
 cleanup

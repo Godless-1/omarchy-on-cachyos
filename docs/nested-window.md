@@ -112,6 +112,38 @@ exec omarchy-shell shell toggle omarchy.menu "$(menu_payload "$route")"
 — so without `omarchy-launch-shell` running, `SUPER+SPACE` has no backend and silently does
 nothing. The binding itself is fine.
 
+## Closing the window ends the session
+
+It sounds like it should not need saying, but Hyprland does not exit when its
+last output disappears. Closing the nested window destroys the output and leaves
+the compositor running headless on a synthetic monitor:
+
+```console
+$ hyprctl monitors -j | jq -r '.[].name'
+WAYLAND-1     # window open
+FALLBACK      # window closed - still running, invisible, for ever
+```
+
+With `--detach` nothing was left to reap it, so every launch leaked a
+compositor. They are invisible, they hold your borrowed keys, and they pile up —
+seven at once on the machine where this was found, the oldest thirteen hours old.
+
+`omarchy-window` now starts a watchdog beside the compositor. Each Hyprland
+instance records its pid in `hyprland.lock`, so the watchdog finds the instance
+belonging to *its own* session rather than assuming the newest one — which would
+shut down the wrong window the moment two are open together.
+
+The rules it follows are deliberately timid, because it is code that ends
+processes:
+
+- It **arms only after seeing a real output.** During startup there is a moment
+  before the nested output exists; acting there would kill the session as it came up.
+- A **failed `hyprctl` query is not a closed window.** No answer means do nothing.
+- **No matching instance means give up**, not guess.
+
+[`test/test-window-watchdog.sh`](../test/test-window-watchdog.sh) covers the case
+that must fire and all four that must not.
+
 ## Where launched apps end up
 
 Omarchy does not start apps directly. Every launcher — the agent keybinding, the
