@@ -11,7 +11,9 @@ post_install() {
 
   Other commands: omarchy-window, omarchy-window-shortcuts, omarchy-oc-install,
   omarchy-oc-block-updates, omarchy-oc-verify-boot, omarchy-oc-preserve-identity,
-  omarchy-oc-clean-boot, omarchy-oc-uninstall.
+  omarchy-oc-clean-boot, omarchy-oc-update, omarchy-oc-uninstall.
+
+  Every one of those is also an `ooc` subcommand: `ooc block-updates --dry-run`.
 
   Already-open shells cache their command lookup. In this one, run:
       bash: hash -r      zsh: rehash      fish: (picks it up on its own)

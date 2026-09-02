@@ -502,7 +502,7 @@ case "$sub" in
   preserve-identity) shift; exec "$HERE/preserve-cachyos-identity.sh" "$@" ;;
   clean-boot)        shift; exec "$HERE/clean-stale-boot-entries.sh" "$@" ;;
   window)            shift; exec "$HERE/omarchy-window" "$@" ;;
-  shortcuts)         shift; exec "$HERE/omarchy-window-shortcuts" "$@" ;;
+  shortcuts|window-shortcuts) shift; exec "$HERE/omarchy-window-shortcuts" "$@" ;;
   h|help|-h) sed -n '5,24p' "$0" | sed 's/^# \?//'; exit 0 ;;
   "") ;;
   *) echo "unknown command: $1" >&2; echo "try: ooc help" >&2; exit 1 ;;
