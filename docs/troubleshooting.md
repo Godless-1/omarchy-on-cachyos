@@ -206,6 +206,34 @@ Anything matching `[0-9a-f]{32}` that is not that token is an orphan. Clean it u
 ./clean-stale-boot-entries.sh --archive  # move out of /boot, keep a copy
 ```
 
+A real run looks like this — note that it checks bootloader references *before* touching
+anything, and archives rather than deletes by default (machine-ids abbreviated):
+
+```text
+==> Active entry token: <active-token>
+==> Orphaned entry directories (never booted):
+      /boot/<stale-token>  (NNNN MB)
+        linux-cachyos/initramfs
+        linux-cachyos/vmlinuz
+        linux-cachyos-lts/initramfs
+        linux-cachyos-lts/vmlinuz
+        limine_history/initramfs_sha256_...
+      total: NNNN MB
+==> Checking whether the bootloader still references them
+==> No bootloader references. Safe to remove.
+==> Archiving <stale-token> -> ~/.local/share/omarchy-cachyos/stale-boot/
+```
+
+An orphaned token often holds more than you expect — two kernels, their initramfs images, and
+`limine_history` copies kept for snapshot entries. On a small ESP that adds up quickly.
+
+The archive is a **copy, then remove**, so nothing is destroyed. Delete it once you have
+rebooted successfully and are happy:
+
+```bash
+rm -rf ~/.local/share/omarchy-cachyos/stale-boot
+```
+
 The script never touches the active token and **refuses to remove anything your bootloader
 still references** — check that yourself first if you are doing it by hand:
 
