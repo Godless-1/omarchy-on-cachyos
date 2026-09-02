@@ -55,7 +55,12 @@ start_session() { # start_session <state>; sets FAKE_PID
   sleep 300 >/dev/null 2>&1 &
   FAKE_PID=$!
   PIDS+=("$FAKE_PID")
-  echo "$FAKE_PID wayland-9" > "$WORK/run/hypr/inst_1/hyprland.lock"
+  # The real format, byte for byte: pid and display on SEPARATE LINES. This
+  # fixture used to write them space-separated on one line, which is what the
+  # code wrongly assumed - so the suite passed against a watchdog that could
+  # never find its instance on a real machine. A fixture that encodes the same
+  # misreading as the code tests nothing.
+  printf '%s\nwayland-9\n' "$FAKE_PID" > "$WORK/run/hypr/inst_1/hyprland.lock"
 }
 
 watchdog() { XDG_RUNTIME_DIR="$WORK/run" "$TOOL" --watch-close "$FAKE_PID" >/dev/null 2>&1 & WD=$!; PIDS+=("$WD"); }

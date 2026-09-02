@@ -31,11 +31,17 @@ SELF=$(readlink -f "$0")
 # belonging to *this* Hyprland rather than assuming the newest one, which would
 # pick the wrong session the moment two windows are opened together.
 watch_for_close() { # watch_for_close <hyprland-pid>
-  local pid="$1" sig="" f real armed=0 i
+  local pid="$1" sig="" f real armed=0 i lockpid
   for ((i = 0; i < 100; i++)); do
     for f in "${XDG_RUNTIME_DIR:-/run/user/$UID}"/hypr/*/hyprland.lock; do
       [[ -r $f ]] || continue
-      if [[ $(cut -d' ' -f1 "$f" 2>/dev/null) == "$pid" ]]; then
+      # The lock is two LINES - pid, then the wayland display - not one
+      # space-separated line. `cut -d' ' -f1` reads every line and returns both
+      # joined, which never equals a pid, so the instance was never found and
+      # the session was never reaped.
+      lockpid=""
+      read -r lockpid < "$f" 2>/dev/null || true
+      if [[ $lockpid == "$pid" ]]; then
         sig=$(basename "$(dirname "$f")"); break 2
       fi
     done
