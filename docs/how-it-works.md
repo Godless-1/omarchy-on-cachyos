@@ -86,13 +86,31 @@ so these land regardless, and re-land on every `omarchy-settings` update:
 | `plymouth/plymouthd.conf` | `Theme=omarchy` | Cosmetic; see below |
 | `skel/.bashrc` | new users only | No effect on existing users |
 
-None are boot-critical. Restore your OS identity if you want it back:
+None are boot-critical, but three of them change how the system presents itself, and
+`NoExtract` cannot stop a script. Use [`preserve-cachyos-identity.sh`](../preserve-cachyos-identity.sh):
 
 ```bash
-sudo ln -sf ../usr/lib/os-release /etc/os-release
+./preserve-cachyos-identity.sh            # report
+./preserve-cachyos-identity.sh --apply    # restore, and keep it that way
 ```
 
-Expect it to return after the next `omarchy-settings` update.
+It restores all three and installs a `PostTransaction` pacman hook targeting
+`omarchy-settings`, so Omarchy's script overwrites them and ours puts them back, in the same
+transaction.
+
+> [!WARNING]
+> Do **not** "restore" `/etc/os-release` by symlinking it to `/usr/lib/os-release`. On CachyOS
+> the identity is not a packaged file at all — `cachyos-hooks` runs
+> `/usr/share/libalpm/scripts/cachyos-branding`, which **sed-edits `/etc/os-release` in
+> place**, which is why the file is unowned. Symlinking it yields plain Arch branding, and
+> leaves the branding script editing the package-owned file under `/usr/lib`. The script
+> converts it back to a regular file first, then calls `cachyos-branding` itself.
+
+Distributions other than CachyOS will have their own equivalent; the same hook pattern
+applies, with a different restore command.
+
+The Plymouth theme only takes effect at the next initramfs rebuild, since the image carries
+its own copy of the config and the theme.
 
 ### Why the plymouth change is not a boot risk
 

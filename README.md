@@ -212,6 +212,7 @@ See [docs/migrations.md](docs/migrations.md).
 | Hard gate after install | Aborts with *DO NOT REBOOT* if `sd-encrypt` has vanished |
 | Binary guards plus `NoExtract` | Hazard 3, from every shell, both sessions, and the Omarchy menu |
 | Snapper snapshot and backups | Rollback if anything else surprises you |
+| A `PostTransaction` hook of our own | The `etc-overrides` script, which `NoExtract` cannot reach |
 
 `NoExtract` is the key idea: pacman never extracts those paths, so the protection **survives
 `pacman -Syu`** instead of being undone by the next update.
@@ -279,6 +280,7 @@ always one logout away.
 | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
 | [`omarchy-window`](omarchy-window) | Omarchy in a window. `--bare`, `-s WxH`, `--no-rule` |
 | [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<machine-id>/` dirs. `--archive`, `--delete` |
+| [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme and fastfetch. `--apply`, `--undo` |
 
 ## Documentation
 
