@@ -1,0 +1,210 @@
+# SPDX-FileCopyrightText: 2026 Godless-1
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Cut a release: check, tag, build from that tag, prove it, publish, attach.
+#
+# Every release before this one was assembled by hand, and the single thing
+# that made four of them unbuildable was the order of operations - a checksum
+# taken after tagging and committed after that. So the order is the whole job
+# here, fixed in one place rather than remembered each time:
+#
+#   1. refuse unless the tree is releasable (version, notes, .SRCINFO)
+#   2. tag
+#   3. build FROM the tag, because source= points at it - which is what proves
+#      the tag is buildable, the property v1.1.0 to v1.4.0 all lacked
+#   4. run the suites, and assert the built package is not empty - the failure
+#      that once shipped an empty /usr/bin
+#   5. publish, and attach the package that was just proven
+#
+# Anything failing after step 2 deletes its own tag on the way out, so a failed
+# run cannot leave an unbuildable tag behind.
+#
+# Deliberately dispatch-only, defaulting to a dry run. Pushing a tag by hand
+# does not publish: there is one way to release, it is visible in the Actions
+# tab, and it cannot go off by accident. The version comes from PKGBUILD, so it
+# cannot disagree with what is packaged; the notes come from
+# docs/releases/v<version>.md, so they are reviewed in the pull request that
+# bumps the version rather than typed into a web form at the end.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Check everything and publish nothing'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write     # create the tag, create the release, upload the asset
+
+jobs:
+  release:
+    name: tag, build, publish
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install what the release needs
+        run: pacman -Sy --noconfirm --needed git github-cli python procps-ng
+
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # tags, so an existing one can be recognised
+
+      # The checkout is owned by a different uid inside the container, and
+      # makepkg gets a user of its own below.
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # ---------------------------------------------------------- guards
+      - name: Work out what is being released
+        id: plan
+        run: |
+          set -euo pipefail
+          ver=$(sed -n 's/^pkgver=//p' PKGBUILD)
+          rel=$(sed -n 's/^pkgrel=//p' PKGBUILD)
+          [ -n "$ver" ] || { echo "::error::no pkgver in PKGBUILD"; exit 1; }
+          notes="docs/releases/v$ver.md"
+          if [ ! -r "$notes" ]; then
+            echo "::error::$notes is missing. Release notes belong in the pull"
+            echo "::error::request that bumps the version, not in a web form."
+            exit 1
+          fi
+          # The first '# ' heading is the release title; everything after it is
+          # the body. That also drops the SPDX header the file carries.
+          title=$(sed -n 's/^# //p' "$notes" | head -1)
+          [ -n "$title" ] || { echo "::error::$notes has no '# <title>' heading"; exit 1; }
+          sed '1,/^# /d' "$notes" > /tmp/body.md
+          [ -s /tmp/body.md ] || { echo "::error::$notes has a heading and no body"; exit 1; }
+          {
+            echo "tag=v$ver"
+            echo "title=$title"
+            echo "pkg=omarchy-on-cachyos-$ver-$rel-any.pkg.tar.zst"
+          } >> "$GITHUB_OUTPUT"
+          echo "Releasing v$ver ($title) from $GITHUB_SHA"
+
+      - name: Refuse a stale .SRCINFO
+        run: |
+          set -euo pipefail
+          useradd -m build && chown -R build:build .
+          su build -c 'makepkg --printsrcinfo > /tmp/.SRCINFO.gen'
+          diff -u .SRCINFO /tmp/.SRCINFO.gen \
+            || { echo "::error::.SRCINFO is stale - run: makepkg --printsrcinfo > .SRCINFO"; exit 1; }
+
+      - name: Refuse a version that is already released
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::$TAG is already released. Bump pkgver instead."
+            exit 1
+          fi
+          # A tag may legitimately exist already - somebody pushed it by hand -
+          # but only if it names the commit being released.
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            at=$(git rev-list -n1 "$TAG")
+            [ "$at" = "$GITHUB_SHA" ] || {
+              echo "::error::$TAG already exists and points at $at, not $GITHUB_SHA"; exit 1; }
+            echo "tag_exists=yes" >> "$GITHUB_ENV"
+          fi
+
+      - name: Stop here (dry run)
+        if: ${{ inputs.dry_run }}
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          TITLE: ${{ steps.plan.outputs.title }}
+          PKG: ${{ steps.plan.outputs.pkg }}
+        run: |
+          echo "Would tag    $TAG at $GITHUB_SHA"
+          echo "Would title  $TITLE"
+          echo "Would attach $PKG"
+          echo
+          echo "A dry run cannot build: makepkg clones the tag, and the tag is"
+          echo "the thing a dry run declines to create. Re-run with dry_run off"
+          echo "to tag, build and publish in that order."
+          echo '--- notes ---'
+          cat /tmp/body.md
+
+      # ------------------------------------------------------------ tag
+      - name: Tag the commit
+        if: ${{ !inputs.dry_run && env.tag_exists != 'yes' }}
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+          TITLE: ${{ steps.plan.outputs.title }}
+        run: |
+          set -euo pipefail
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "$TITLE"
+          git push origin "$TAG"
+
+      # ---------------------------------------------------------- build
+      # From the tag, not from this checkout: PKGBUILD's source= is
+      # git+$url#tag=v$pkgver, so this is the same build a user gets from
+      # `makepkg -si` on a clean clone, and a tag nobody can build from fails
+      # here instead of in somebody's terminal.
+      - name: Build the package from the tag
+        if: ${{ !inputs.dry_run }}
+        env:
+          PKG: ${{ steps.plan.outputs.pkg }}
+        run: |
+          set -euo pipefail
+          chown -R build:build .
+          su build -c 'makepkg -f --noconfirm --nodeps'
+          ls -l "$PKG"
+
+      - name: Run every test suite
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          for t in test/*.sh; do
+            echo "== $t"
+            bash "$t"
+          done
+
+      - name: Confirm the package is not empty
+        if: ${{ !inputs.dry_run }}
+        env:
+          PKG: ${{ steps.plan.outputs.pkg }}
+        run: |
+          set -euo pipefail
+          list=$(bsdtar -tf "$PKG")
+          for c in omarchy-on-cachyos ooc omarchy-window omarchy-window-shortcuts \
+                   omarchy-oc-install omarchy-oc-uninstall omarchy-oc-block-updates \
+                   omarchy-oc-verify-boot omarchy-oc-preserve-identity \
+                   omarchy-oc-clean-boot omarchy-oc-update; do
+            grep -qx "usr/bin/$c" <<<"$list" && echo "ok  usr/bin/$c" \
+              || { echo "::error::missing usr/bin/$c"; exit 1; }
+          done
+          grep -q 'usr/share/applications/omarchy-on-cachyos.desktop' <<<"$list" \
+            || { echo "::error::desktop entry missing from package"; exit 1; }
+          grep -q 'usr/share/icons/hicolor/scalable/apps/omarchy-on-cachyos.svg' <<<"$list" \
+            || { echo "::error::icon missing from package"; exit 1; }
+
+      # -------------------------------------------------------- publish
+      - name: Publish the release
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.plan.outputs.tag }}
+          TITLE: ${{ steps.plan.outputs.title }}
+          PKG: ${{ steps.plan.outputs.pkg }}
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --title "$TITLE" --notes-file /tmp/body.md "$PKG"
+          echo "Published: $(gh release view "$TAG" --json url -q .url)"
+
+      # A tag nobody can build from is the mistake this project has already
+      # made four times over. If anything after tagging failed, the tag goes
+      # with it - unless it was somebody else's tag to begin with.
+      - name: Take the tag back if the release failed
+        if: ${{ failure() && !inputs.dry_run }}
+        env:
+          TAG: ${{ steps.plan.outputs.tag }}
+        run: |
+          if [ "${tag_exists:-}" != "yes" ] && git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::warning::release failed after tagging - deleting $TAG"
+            git push --delete origin "$TAG" || true
+          fi
