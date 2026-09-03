@@ -259,6 +259,15 @@ where you are.
 9. Symlinks the session file where your greeter will find it
 10. Seeds `~/.config` **copy-if-absent** — your files always win
 
+Steps 4, 6 and 8 talk to mirrors, and mirrors misbehave: a 404 for a file your database
+still lists, a CDN resetting a 114 MiB download at 95%, a mirror in another hemisphere
+timing out. Each `pacman` transaction is therefore retried up to four times with a widening
+pause — forcing a database refresh after a 404, discarding any package that arrived
+corrupted, and never cutting off a slow-but-moving transfer. Whatever already downloaded
+stays in pacman's cache, so even a run that gives up resumes where it stopped when you start
+it again. The `sudo` timestamp is kept alive throughout, so a twenty-minute download is never
+followed by a password prompt nobody is watching for.
+
 ---
 
 ## When something goes wrong
