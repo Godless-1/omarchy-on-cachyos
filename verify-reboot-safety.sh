@@ -66,6 +66,37 @@ if compgen -G "/etc/limine-entry-tool.d/omarchy-*" >/dev/null 2>&1; then
       "Stop them returning:  ./install-omarchy-on-cachyos.sh  (rewrites the NoExtract guards)"
 else ok "no omarchy limine-entry-tool drop-ins"; fi
 
+# limine-entry-tool titles its top-level OS entry from NAME/PRETTY_NAME in
+# /etc/os-release, and keys on that title. Change the distribution identity -
+# which is exactly what Omarchy does, and what preserve-cachyos-identity.sh
+# undoes - and the next kernel event does not rename the existing entry: it
+# writes a brand new one and abandons the old. The abandoned block keeps the
+# hashes it had on the day it was orphaned, so with ENABLE_VERIFICATION=yes it
+# stops matching the initramfs on disk and refuses to boot, while the menu still
+# offers it. One machine, two OS entries, and the good-looking one is the dead one.
+MID=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null || true)
+if [[ -n ${MID:-} ]] && sudo test -f /boot/limine.conf 2>/dev/null; then
+  # Top-level OS entries carry this comment unindented; snapshot sub-entries
+  # indent theirs, which is what keeps this from counting all 50 of them.
+  OSN=$(sudo grep -cE "^comment: machine-id=${MID}([[:space:]]|$)" /boot/limine.conf 2>/dev/null || true)
+  OSN=${OSN:-0}
+  if (( OSN > 1 )); then
+    bad "$OSN top-level boot entries claim this machine - only one can be current" \
+        "The others were orphaned when your distribution name changed; they still" \
+        "carry the hashes they had that day, so they fail verification and will not boot." \
+        "See which is which:  sudo limine-entry-tool --tree" \
+        "The live one is whichever lists your newest snapshot." \
+        "Remove a stale one:  sudo limine-remove-entry $MID <position>" \
+        "Then regenerate:     sudo limine-update" \
+        "Booting is not at risk meanwhile - the current entry still works."
+  elif (( OSN == 1 )); then
+    ok "one boot entry for this machine (no orphaned duplicates)"
+  else
+    warn "could not find a top-level boot entry for this machine-id in limine.conf"
+    echo "        -> not necessarily wrong; check by hand:  sudo limine-entry-tool --tree"
+  fi
+fi
+
 # --------------------------------------------------------------- 2
 hdr "2. Effective mkinitcpio HOOKS"
 EFF=$(sudo bash -c 'HOOKS=(); MODULES=(); . /etc/mkinitcpio.conf
@@ -281,8 +312,16 @@ if (( REBUILD )); then
         "Fix the failures listed above, re-run without --rebuild until clean, then retry."
   else
     RC=0
-    if command -v limine-mkinitcpio >/dev/null && [[ ! -d /etc/mkinitcpio.d || -z $(ls -A /etc/mkinitcpio.d 2>/dev/null) ]]; then
-      echo "        no mkinitcpio presets; this is a limine + kernel-install system"
+    # Presets are not the deciding factor - the bootloader is. limine-mkinitcpio
+    # builds the image *and* rewrites the boot entries and their verification
+    # hashes; plain `mkinitcpio -P` only builds the image, leaving entries
+    # pointing at hashes that no longer match. limine ships
+    # /usr/local/bin/mkinitcpio (earlier on PATH than /usr/bin, sudo's
+    # secure_path included) purely to warn about that, and it then stops to ask
+    # an interactive question that would hang an unattended run. So whenever the
+    # limine tooling is present it is the right tool, presets or not.
+    if command -v limine-mkinitcpio >/dev/null; then
+      echo "        limine system: rebuilding the image and its boot entries together"
       sudo limine-mkinitcpio || RC=$?
       if (( RC == 0 )); then ok "limine-mkinitcpio succeeded"
       else bad "limine-mkinitcpio FAILED (exit $RC)" \

@@ -295,6 +295,52 @@ anything, or you will be left with dangling menu entries.
 
 ---
 
+## Two boot entries for one machine, and the good-looking one errors
+
+**Symptom.** The limine menu lists your system twice — say `CachyOS` and `Arch Linux`.
+Selecting the correctly-named one shows an error instead of booting; the oddly-named one
+boots fine.
+
+**Cause.** `limine-entry-tool` titles its top-level OS entry from `NAME`/`PRETTY_NAME` in
+`/etc/os-release`, and keys on that title. If the distribution name changes — Omarchy
+overwriting it, or this project restoring it — the next kernel event does **not** rename
+the existing entry. It writes a new one under the new name and abandons the old.
+
+The abandoned block keeps the kernel and initramfs hashes it had on the day it was
+orphaned. With `ENABLE_VERIFICATION=yes` (the CachyOS default, in
+`/etc/limine-entry-tool.conf`) limine checks those hashes, finds they no longer match the
+files on disk, and refuses to load — which is the error you see. Nothing is corrupt: the
+image is fine, the entry describing it is stale.
+
+**Check.**
+
+```bash
+./verify-reboot-safety.sh
+```
+
+It fails when more than one top-level entry claims your machine-id. To see the entries:
+
+```bash
+sudo limine-entry-tool --tree
+```
+
+The live one is whichever lists your newest snapshot.
+
+**Fix.** Remove the stale entry, then regenerate:
+
+```bash
+sudo limine-remove-entry "$(cat /etc/machine-id)" <position>
+sudo limine-update
+```
+
+`limine-update` runs `limine-install` and `limine-mkinitcpio` together, so entries and
+hashes are rewritten as a pair. Do not use plain `mkinitcpio -P` here: it rebuilds the
+image without touching the entries, which is how hashes drift out of sync in the first
+place. limine ships `/usr/local/bin/mkinitcpio` specifically to warn about that.
+
+**Booting is not at risk while you sort this out** — the current entry still works, and
+your snapshots remain bootable from the menu.
+
 ## Verifying you can still boot
 
 ```bash

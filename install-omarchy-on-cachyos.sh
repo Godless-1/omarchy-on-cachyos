@@ -230,6 +230,12 @@ run cp -a /etc/mkinitcpio.conf.d "$BACKUP/mkinitcpio.conf.d"
 run_to "$BACKUP/pkglist-explicit.txt" pacman -Qqe
 run_to "$BACKUP/pkglist-all.txt" pacman -Qq
 run cp /proc/cmdline "$BACKUP/cmdline.txt"
+# The bootloader config is the thing most at risk here and was the one thing not
+# copied. It lives on a root-only vfat ESP, so this needs sudo and a plain cp -
+# preserving vfat's ownership into $HOME would be wrong even if it worked.
+if [[ -r /boot/limine.conf ]] || sudo test -f /boot/limine.conf 2>/dev/null; then
+  run_to "$BACKUP/limine.conf" sudo cat /boot/limine.conf
+fi
 
 # btrfs + snapper: take a rollback point you can boot from limine.
 if (( DRYRUN )); then

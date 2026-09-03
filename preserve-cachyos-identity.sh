@@ -273,3 +273,25 @@ $(log "Done.")
 
   Undo:     $0 --undo
 EOF
+
+# Changing the distribution name is not only cosmetic. limine-entry-tool titles
+# its top-level boot entry from NAME/PRETTY_NAME in /etc/os-release and keys on
+# that title, so the next kernel event writes a NEW entry under the new name and
+# abandons the old one - which then keeps stale verification hashes and quietly
+# stops booting while still sitting in the menu. Regenerating now renames the
+# entry in one step, instead of leaving a duplicate for the next kernel update
+# to create.
+if command -v limine-update >/dev/null 2>&1; then
+  cat <<'EOF'
+  Boot menu: your distribution name just changed, and limine names its boot
+             entry after it. Regenerate now so the entry is renamed rather than
+             duplicated by the next kernel update:
+
+               sudo limine-update
+
+             Skipping this is not dangerous today - your current entry still
+             boots - but you will end up with two entries for one machine, and
+             the stale one fails verification. ./verify-reboot-safety.sh now
+             detects exactly that.
+EOF
+fi

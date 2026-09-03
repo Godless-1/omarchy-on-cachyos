@@ -163,6 +163,51 @@ printf 'OMARCHY-ART\n' > "$R/home/.config/omarchy/branding/about.txt"
 expect_not "says nothing when the branding was never changed" \
   "branding has come back" "$(check "$R")"; rm -rf "$R"
 
+printf '\n\033[1;34m== limine boot-entry duplication\033[0m\n'
+# A real failure: an orphaned OS entry kept stale verification hashes, showed an
+# error instead of booting, and the working entry was the one with the wrong
+# name. The rule that catches it is one regex in verify-reboot-safety.sh, and it
+# only works because top-level OS entries write that comment unindented while
+# snapshot sub-entries indent theirs. Assert the expression is still there, then
+# assert it still counts correctly - a fixture alone would pass forever after
+# someone edited the script.
+# shellcheck disable=SC2016  # the literal source text, not something to expand
+OSRE='^comment: machine-id=${MID}([[:space:]]|$)'
+if grep -qF -- "$OSRE" "$HERE/verify-reboot-safety.sh"; then
+  ok "verify-reboot-safety.sh still uses the tested entry-matching rule"
+else
+  nope "entry-matching rule changed; update this test to match verify-reboot-safety.sh"
+fi
+
+limine_fixture() { # limine_fixture <file> <count-of-top-level-os-entries>
+  local f="$1" n="$2" i
+  : > "$f"
+  printf 'timeout: 5\ndefault_entry: 2\n\n' >> "$f"
+  for ((i = 0; i < n; i++)); do
+    printf 'comment: machine-id=%s order-priority=50 \n/+OS%d\n  //linux-cachyos\n' "$MIDF" "$i" >> "$f"
+    # A snapshot sub-entry carrying the same id, indented. Must not be counted.
+    printf '     ///%d | snapshot\n     comment: machine-id=%s\n' "$i" "$MIDF" >> "$f"
+  done
+}
+MIDF=1c0f28fab0c443338dde8610e5e938b7
+count_os() { grep -cE "^comment: machine-id=${MIDF}([[:space:]]|\$)" "$1" || true; }
+
+expect_count() { # expect_count <description> <want> <file>
+  local d="$1" want="$2" got; got=$(count_os "$3")
+  if [[ $got == "$want" ]]; then ok "$d"; else nope "$d (counted $got, wanted $want)"; fi
+}
+
+T=$(mktemp -d)
+limine_fixture "$T/one.conf" 1
+expect_count "one OS entry counts as one, despite an indented snapshot sharing the id" 1 "$T/one.conf"
+
+limine_fixture "$T/two.conf" 2
+expect_count "an orphaned duplicate OS entry is detected" 2 "$T/two.conf"
+
+printf 'timeout: 5\n  comment: machine-id=%s\n' "$MIDF" > "$T/none.conf"
+expect_count "an indented id alone is not mistaken for an OS entry" 0 "$T/none.conf"
+rm -rf "$T"
+
 printf '\n\033[1;34m== severity ordering\033[0m\n'
 R=$(new_root); printf 'HOOKS=(x)\n' > "$R/etc/mkinitcpio.conf.d/omarchy_hooks.conf"
 expect "boot faults are marked CRITICAL" "[CRITICAL]" "$(check "$R")"; rm -rf "$R"
