@@ -179,6 +179,17 @@ else
   nope "entry-matching rule changed; update this test to match verify-reboot-safety.sh"
 fi
 
+# Severity is not cosmetic here. bad() makes the verdict print DO NOT REBOOT,
+# and this finding does not stop the machine booting - the live entry works.
+# Shipping it as a failure put "DO NOT REBOOT" directly above a paragraph
+# saying rebooting was fine, which is how a checker trains people to ignore it.
+OSBLK=$(sed -n '/OSN > 1/,/elif (( OSN == 1 ))/p' "$HERE/verify-reboot-safety.sh")
+if grep -q 'warn ' <<<"$OSBLK" && ! grep -qE '^\s*bad ' <<<"$OSBLK"; then
+  ok "a duplicate boot entry warns rather than declaring DO NOT REBOOT"
+else
+  nope "duplicate-entry finding must use warn(); bad() triggers a false DO NOT REBOOT"
+fi
+
 limine_fixture() { # limine_fixture <file> <count-of-top-level-os-entries>
   local f="$1" n="$2" i
   : > "$f"

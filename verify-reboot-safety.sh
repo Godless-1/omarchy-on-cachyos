@@ -81,14 +81,19 @@ if [[ -n ${MID:-} ]] && sudo test -f /boot/limine.conf 2>/dev/null; then
   OSN=$(sudo grep -cE "^comment: machine-id=${MID}([[:space:]]|$)" /boot/limine.conf 2>/dev/null || true)
   OSN=${OSN:-0}
   if (( OSN > 1 )); then
-    bad "$OSN top-level boot entries claim this machine - only one can be current" \
-        "The others were orphaned when your distribution name changed; they still" \
-        "carry the hashes they had that day, so they fail verification and will not boot." \
-        "See which is which:  sudo limine-entry-tool --tree" \
-        "The live one is whichever lists your newest snapshot." \
-        "Remove a stale one:  sudo limine-remove-entry $MID <position>" \
-        "Then regenerate:     sudo limine-update" \
-        "Booting is not at risk meanwhile - the current entry still works."
+    # A warning, not a failure, and the distinction is the whole point: the live
+    # entry boots. Calling bad() here would print DO NOT REBOOT above a paragraph
+    # explaining that rebooting is fine, which is how a checker teaches people to
+    # stop reading it.
+    warn "$OSN top-level boot entries claim this machine - only one can be current"
+    echo "        The extra ones were orphaned when your distribution name changed. They"
+    echo "        keep the hashes they had that day, so they fail verification and error"
+    echo "        out instead of booting. Your live entry is untouched - this is a"
+    echo "        warning, not a failure, and rebooting is safe."
+    echo "        -> See which is which:      sudo limine-entry-tool --tree"
+    echo "                                    the live one lists your newest snapshot"
+    echo "        -> Remove a stale one:      sudo limine-remove-entry $MID <position>"
+    echo "        -> Then regenerate:         sudo limine-update"
   elif (( OSN == 1 )); then
     ok "one boot entry for this machine (no orphaned duplicates)"
   else

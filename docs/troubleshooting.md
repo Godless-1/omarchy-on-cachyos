@@ -318,7 +318,7 @@ image is fine, the entry describing it is stale.
 ./verify-reboot-safety.sh
 ```
 
-It fails when more than one top-level entry claims your machine-id. To see the entries:
+It warns when more than one top-level entry claims your machine-id. To see the entries:
 
 ```bash
 sudo limine-entry-tool --tree
