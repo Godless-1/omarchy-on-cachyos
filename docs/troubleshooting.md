@@ -329,8 +329,25 @@ The live one is whichever lists your newest snapshot.
 **Fix.** Remove the stale entry, then regenerate:
 
 ```bash
-sudo limine-remove-entry "$(cat /etc/machine-id)" <position>
-sudo limine-update
+sudo limine-remove-entry "CachyOS"
+```
+
+`--remove-entry` takes an **entry path** — the name exactly as `--tree` prints it — with
+position defaulting to 1. Prefer that over the machine-ID-and-position form: a name is
+unambiguous, a position is a guess about ordering.
+
+That leaves one working entry, possibly under the wrong distribution's name. To rename it,
+remove it and let it regenerate from the now-correct `os-release`, as a single command so
+the menu is never left without a Linux entry:
+
+```bash
+sudo sh -c 'limine-remove-entry "Arch Linux" && limine-update'
+```
+
+Back up the config first, so there is a restore path from a live USB:
+
+```bash
+sudo cp /boot/limine.conf ~/limine.conf.backup
 ```
 
 `limine-update` runs `limine-install` and `limine-mkinitcpio` together, so entries and

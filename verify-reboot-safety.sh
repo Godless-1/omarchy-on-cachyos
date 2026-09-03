@@ -92,7 +92,8 @@ if [[ -n ${MID:-} ]] && sudo test -f /boot/limine.conf 2>/dev/null; then
     echo "        warning, not a failure, and rebooting is safe."
     echo "        -> See which is which:      sudo limine-entry-tool --tree"
     echo "                                    the live one lists your newest snapshot"
-    echo "        -> Remove a stale one:      sudo limine-remove-entry $MID <position>"
+    echo "        -> Remove a stale one by name, which is unambiguous:"
+    echo "             sudo limine-remove-entry '<name exactly as --tree prints it>'"
     echo "        -> Then regenerate:         sudo limine-update"
   elif (( OSN == 1 )); then
     ok "one boot entry for this machine (no orphaned duplicates)"
