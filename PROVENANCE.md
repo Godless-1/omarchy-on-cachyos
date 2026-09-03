@@ -22,6 +22,15 @@ personally.**
 
 No part of this was generated unattended. No part of it was committed unread.
 
+**1.4.3.6 was made differently, and the difference belongs here.** It was written by the same
+model running in Claude Code on the web, which holds a GitHub credential of its own. The model
+wrote the change, committed it, opened [#1](https://github.com/Godless-1/omarchy-on-cachyos/pull/1)
+and [#2](https://github.com/Godless-1/omarchy-on-cachyos/pull/2), merged both on the operator's
+instruction, and pushed the `v1.4.3.6` tag - none of which it could do in the original session.
+What did not change: it still has no shell on the operator's machine, so every `sudo` command
+this project runs remains the operator's to run, and the boot hazards were never within its
+reach. What did: the two sentences above describe that first session, not this release.
+
 ---
 
 ## Division of labour
@@ -163,6 +172,8 @@ this page would be worth less if this section were missing.
 | Every script, statically | **Linted.** `shellcheck` at `-S style`, pinned to one version, in CI |
 | The package | **Built in CI** in an Arch container, asserting all eight commands reach `/usr/bin` |
 | `install-omarchy-on-cachyos.sh` | **Exercised.** Dry-run plus real runs, including two failed pacman transactions that were diagnosed and fixed |
+| The pacman retry path in that script | **Tested, not exercised.** `test/test-pacman-retry.sh` drives it against a scripted pacman: retry, a forced `-Syy` after a 404, a corrupted cache file discarded by name, an immediate stop on a conflict. It has never met a mirror actually failing - the failure that prompted it was observed, the recovery was not |
+| The sudo keepalive in that script | **Never exercised.** Written, linted, syntax-checked; no run has yet outlived a sudo timestamp |
 | `verify-reboot-safety.sh` | **Exercised heavily.** Four runs; three of its own bugs found that way |
 | `omarchy-window --bare` | **Exercised.** Launched nested, sized to the work area, keybindings confirmed working |
 | `block-omarchy-updates.sh` (install path) | **Exercised.** All four binaries guarded, `NoExtract` present, originals stashed |
