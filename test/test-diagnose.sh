@@ -164,16 +164,19 @@ expect_not "says nothing when the branding was never changed" \
   "branding has come back" "$(check "$R")"; rm -rf "$R"
 
 printf '\n\033[1;34m== limine boot-entry duplication\033[0m\n'
-# A real failure: an orphaned OS entry kept stale verification hashes, showed an
-# error instead of booting, and the working entry was the one with the wrong
-# name. The rule that catches it is one regex in verify-reboot-safety.sh, and it
-# only works because top-level OS entries write that comment unindented while
-# snapshot sub-entries indent theirs. Assert the expression is still there, then
-# assert it still counts correctly - a fixture alone would pass forever after
-# someone edited the script.
-# shellcheck disable=SC2016  # the literal source text, not something to expand
-OSRE='^comment: machine-id=${MID}([[:space:]]|$)'
-if grep -qF -- "$OSRE" "$HERE/verify-reboot-safety.sh"; then
+# A real failure, twice over. First: an orphaned OS entry kept stale
+# verification hashes, errored instead of booting, and the entry that still
+# worked carried the wrong distribution's name. Then the check written for it
+# counted `comment: machine-id=` lines as a stand-in for entries - and removing
+# an entry leaves the comment that preceded it behind, so it went on reporting a
+# duplicate that was already gone.
+#
+# The rule counts what actually makes a top-level entry bootable for this
+# machine: something under it loading from boot():/<machine-id>/. Assert the
+# rule is still the one under test, then exercise it on the shapes seen on real
+# hardware.
+# shellcheck disable=SC2016  # the literal awk source, not something to expand
+if grep -qF 'index($0, "boot():/" mid "/")' "$HERE/verify-reboot-safety.sh"; then
   ok "verify-reboot-safety.sh still uses the tested entry-matching rule"
 else
   nope "entry-matching rule changed; update this test to match verify-reboot-safety.sh"
@@ -190,33 +193,54 @@ else
   nope "duplicate-entry finding must use warn(); bad() triggers a false DO NOT REBOOT"
 fi
 
-limine_fixture() { # limine_fixture <file> <count-of-top-level-os-entries>
-  local f="$1" n="$2" i
-  : > "$f"
-  printf 'timeout: 5\ndefault_entry: 2\n\n' >> "$f"
-  for ((i = 0; i < n; i++)); do
-    printf 'comment: machine-id=%s order-priority=50 \n/+OS%d\n  //linux-cachyos\n' "$MIDF" "$i" >> "$f"
-    # A snapshot sub-entry carrying the same id, indented. Must not be counted.
-    printf '     ///%d | snapshot\n     comment: machine-id=%s\n' "$i" "$MIDF" >> "$f"
-  done
-}
 MIDF=1c0f28fab0c443338dde8610e5e938b7
-count_os() { grep -cE "^comment: machine-id=${MIDF}([[:space:]]|\$)" "$1" || true; }
 
+# The counting rule, lifted from the script so the test cannot drift from it.
+count_os() {
+  awk -v mid="$MIDF" '
+    /^\/[^\/]/            { name = $0; next }
+    index($0, "boot():/" mid "/") { if (name != "") hit[name] = 1 }
+    END                   { print length(hit) + 0 }
+  ' "$1"
+}
 expect_count() { # expect_count <description> <want> <file>
   local d="$1" want="$2" got; got=$(count_os "$3")
   if [[ $got == "$want" ]]; then ok "$d"; else nope "$d (counted $got, wanted $want)"; fi
 }
 
+# One OS entry, shaped like the real thing: kernels, plus an indented Snapshots
+# sub-tree whose 50-odd children all load from the same machine directory.
+os_entry() { # os_entry <name> <preceding-comment?>
+  local name="$1"
+  [[ ${2:-} == before ]] && printf 'comment: machine-id=%s\n' "$MIDF"
+  printf '/+%s\n' "$name"
+  [[ ${2:-} == before ]] || printf 'comment: machine-id=%s order-priority=50 \n' "$MIDF"
+  printf '  //linux-cachyos\n  path: boot():/%s/linux-cachyos/vmlinuz#abc\n' "$MIDF"
+  printf '     //Snapshots\n'
+  printf '     ///%d | snap\n     path: boot():/%s/limine_history/vmlinuz_sha256_x#abc\n' 1 "$MIDF"
+  printf '     ///%d | snap\n     path: boot():/%s/limine_history/vmlinuz_sha256_y#abc\n' 2 "$MIDF"
+}
+# The parts of a real config that must never be counted as this machine's.
+other_entries() {
+  printf '/+Other systems and bootloaders\n//Windows Boot Manager\n'
+  printf '        image_path: guid(DE1D-11C6):/efi/Microsoft/Boot/bootmgfw.efi\n'
+  printf '/EFI fallback\nprotocol: efi\npath: boot():/EFI/BOOT/BOOTX64.EFI\n'
+}
+
 T=$(mktemp -d)
-limine_fixture "$T/one.conf" 1
-expect_count "one OS entry counts as one, despite an indented snapshot sharing the id" 1 "$T/one.conf"
+{ printf 'timeout: 5\n\n'; os_entry CachyOS before; other_entries; } > "$T/one.conf"
+expect_count "one OS entry counts once, not once per snapshot" 1 "$T/one.conf"
 
-limine_fixture "$T/two.conf" 2
-expect_count "an orphaned duplicate OS entry is detected" 2 "$T/two.conf"
+{ printf 'timeout: 5\n\n'; os_entry CachyOS before; other_entries; os_entry "Arch Linux"; } > "$T/two.conf"
+expect_count "two entries for one machine are detected" 2 "$T/two.conf"
 
-printf 'timeout: 5\n  comment: machine-id=%s\n' "$MIDF" > "$T/none.conf"
-expect_count "an indented id alone is not mistaken for an OS entry" 0 "$T/none.conf"
+# The exact state after removing the stale entry: its machine-id comment is left
+# behind with no entry under it. Counting comments read this as a duplicate.
+{ printf 'timeout: 5\n\ncomment: machine-id=%s\n\n' "$MIDF"; other_entries; os_entry "Arch Linux"; } > "$T/dangling.conf"
+expect_count "a comment left behind by a removed entry is not a second entry" 1 "$T/dangling.conf"
+
+{ printf 'timeout: 5\n\n'; other_entries; } > "$T/none.conf"
+expect_count "an unrelated bootloader and an EFI fallback count as none" 0 "$T/none.conf"
 rm -rf "$T"
 
 printf '\n\033[1;34m== severity ordering\033[0m\n'

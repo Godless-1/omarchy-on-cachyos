@@ -76,9 +76,19 @@ else ok "no omarchy limine-entry-tool drop-ins"; fi
 # offers it. One machine, two OS entries, and the good-looking one is the dead one.
 MID=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null || true)
 if [[ -n ${MID:-} ]] && sudo test -f /boot/limine.conf 2>/dev/null; then
-  # Top-level OS entries carry this comment unindented; snapshot sub-entries
-  # indent theirs, which is what keeps this from counting all 50 of them.
-  OSN=$(sudo grep -cE "^comment: machine-id=${MID}([[:space:]]|$)" /boot/limine.conf 2>/dev/null || true)
+  # Count entries that can actually boot this machine, not comments that mention
+  # it. The first version of this counted unindented `comment: machine-id=`
+  # lines, which was a proxy and a bad one: removing an OS entry can leave the
+  # comment that preceded it behind, and the check then reported a duplicate
+  # that no longer existed. What makes a top-level entry this machine's is that
+  # something under it loads from boot():/<machine-id>/ - so count those.
+  # Top-level entries start with a single unindented slash; every sub-entry
+  # uses two or more, or is indented, so snapshots fold into their parent.
+  OSN=$(sudo awk -v mid="$MID" '
+    /^\/[^\/]/            { name = $0; next }
+    index($0, "boot():/" mid "/") { if (name != "") hit[name] = 1 }
+    END                   { print length(hit) + 0 }
+  ' /boot/limine.conf 2>/dev/null || true)
   OSN=${OSN:-0}
   if (( OSN > 1 )); then
     # A warning, not a failure, and the distinction is the whole point: the live
