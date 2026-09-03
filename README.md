@@ -384,6 +384,20 @@ digit and an alliterative adjective (Stumbling Snorlax, Sleepless Snorlax) rathe
 Pokémon, so the name stops moving only once several releases in a row have behaved. The
 number nominates; the release has to earn it.
 
+### Cutting one
+
+1. Bump `pkgver` in [`PKGBUILD`](PKGBUILD), then `makepkg --printsrcinfo > .SRCINFO`
+2. Write `docs/releases/v<version>.md` — the first `# ` heading becomes the release title,
+   everything after it becomes the body
+3. Merge that, then run the **Release** workflow from the Actions tab
+
+It defaults to a dry run, which checks the version, the notes and `.SRCINFO` and publishes
+nothing. With `dry_run` off it tags, builds the package **from that tag**, runs every suite,
+asserts the built package is not empty, and only then publishes and attaches it. Anything that
+fails after tagging deletes its own tag on the way out, so a tag nobody can build from cannot
+survive a failed run — which is what happened four times when releases were assembled by hand.
+Pushing a tag by hand publishes nothing; the workflow is the only way in.
+
 ## Documentation
 
 *Longer form, one topic each.*
