@@ -71,6 +71,8 @@ jobs:
         run: ./test/test-browser-shim.sh
       - name: Run the update-check test suite
         run: ./test/test-update-check.sh
+      - name: Run the pacman-retry test suite
+        run: ./test/test-pacman-retry.sh
 
   package:
     name: makepkg + namcap

@@ -83,6 +83,94 @@ run_to() {
   else "$@" > "$out"; fi
 }
 
+# ------------------------------------------------------- pacman, retried
+# A fresh machine pulls ~175 MiB from mirrors it has never spoken to, and
+# mirrors misbehave: one 404s for a file the local database still lists,
+# another resets the HTTP/2 stream halfway through a 114 MiB package, a third
+# times out. pacman then rolls the whole transaction back and the install stops
+# with nothing installed, leaving a by-hand re-run as the only way forward.
+#
+# None of that needs a human. pacman keeps whatever it did retrieve in
+# /var/cache/pacman/pkg, so a retry resumes instead of starting over.
+PAC_TRIES=${PAC_TRIES:-4}       # attempts per transaction
+PAC_BACKOFF=${PAC_BACKOFF:-5}   # seconds before the 2nd attempt, doubled after
+
+# Failures that are worth asking again. Everything not matched here - a file
+# conflict, an unknown package, an unsatisfiable dependency - fails identically
+# however many times it is asked.
+PAC_TRANSIENT='failed retrieving|failed to retrieve|failed to synchronize|download library error|could not resolve host|connection timed out|connection reset|reset by server|transfer closed|operation too slow|temporary failure|timeout was reached'
+
+# Given to every transaction:
+#   --noconfirm                 the questions pacman asks here have exactly one
+#                               right answer, and nobody may be watching to give it
+#   --disable-download-timeout  a 20 KiB/s mirror is slow, not dead; the default
+#                               low-speed cutoff throws away the whole transfer
+declare -a PAC_OPTS=(--noconfirm --disable-download-timeout)
+
+# pac <pacman arguments...>
+# One transaction, retried while the failure is a download failure.
+pac() {
+  if (( DRYRUN )); then
+    printf '   [dry-run] %s\n' "$(printf '%q ' sudo pacman "${PAC_OPTS[@]}" "$@")"
+    return 0
+  fi
+  local err attempt=1 delay=$PAC_BACKOFF dropped f
+  err=$(mktemp)
+  while :; do
+    # stderr alone is captured, so pacman still has a terminal on stdout and
+    # keeps drawing its progress bars. sudo prompts on /dev/tty, so a password
+    # prompt is not swallowed here either.
+    if sudo pacman "${PAC_OPTS[@]}" "$@" 2>"$err"; then
+      cat "$err" >&2
+      rm -f "$err"
+      return 0
+    fi
+    cat "$err" >&2
+
+    # A cached package that arrived damaged: pacman names the file, deleting it
+    # is the documented fix, and the next attempt fetches it again.
+    dropped=0
+    while read -r f; do
+      [[ -n $f ]] || continue
+      warn "discarding a corrupted download: $(basename "$f")"
+      sudo rm -f "$f" "$f.sig"
+      dropped=1
+    done < <(grep -E 'invalid or corrupted' "$err" \
+               | grep -oE '/var/cache/pacman/pkg/[^ '"'"'"]+' | sort -u)
+
+    if (( ! dropped )) && ! grep -qEi "$PAC_TRANSIENT" "$err"; then
+      rm -f "$err"
+      die "pacman refused this transaction, and not over a download" \
+          "Asking again would fail the same way, so it stops here." \
+          "pacman's own error is printed above - it names what it objected to." \
+          "Nothing is half-installed: a failed transaction is rolled back whole." \
+          "Resolve that, then re-run:  $0 ${SELF_ARGS[*]-}"
+    fi
+
+    if (( attempt >= PAC_TRIES )); then
+      rm -f "$err"
+      die "the mirrors would not hand over every file, after $PAC_TRIES attempts" \
+          "Nothing is half-installed: a failed transaction is rolled back whole." \
+          "Everything already downloaded is kept, so a re-run resumes:  $0 ${SELF_ARGS[*]-}" \
+          "Pick faster mirrors first, if this keeps happening:  sudo cachyos-rate-mirrors" \
+          "Or check the link itself:  curl -I $DB_URL/omarchy.db"
+    fi
+
+    # A 404 is the signature of local databases that no longer match what the
+    # mirror carries. Nothing else fixes that, and nothing else needs it.
+    if grep -qE '404|[Nn]ot [Ff]ound' "$err"; then
+      warn "a mirror is out of step with the local databases - forcing a refresh"
+      sudo pacman "${PAC_OPTS[@]}" -Syy || true
+    fi
+    warn "download failure (attempt $attempt of $PAC_TRIES) - retrying in ${delay}s, keeping what already arrived"
+    sleep "$delay"
+    attempt=$(( attempt + 1 ))
+    delay=$(( delay * 2 ))
+  done
+}
+
+# Kept so a recovery hint can hand back the exact command to re-run.
+SELF_ARGS=("$@")
 for arg in "$@"; do
   case "$arg" in
     --minimal) MINIMAL=1 ;;
@@ -95,6 +183,29 @@ done
 (( EUID == 0 )) && die "Run as your normal user, not root. It will sudo where needed." "Re-run without sudo:  $0 ${*:-}" "It needs your HOME to seed configs, which root does not have."
 command -v pacman >/dev/null || die "pacman not found - this only works on Arch and its derivatives" "Nothing has been changed."
 (( DRYRUN )) || sudo -v || die "sudo required" "Nothing has been changed." "To see what it would do without sudo:  $0 --dry-run"
+
+# One EXIT trap for the whole script: the sudo keepalive below and the keyring's
+# scratch directory both hang off it.
+KEEPALIVE=""
+KEYRING_TMP=""
+cleanup() {
+  [[ -n $KEEPALIVE ]] && kill "$KEEPALIVE" 2>/dev/null
+  [[ -n $KEYRING_TMP ]] && rm -rf "$KEYRING_TMP"
+  return 0
+}
+trap cleanup EXIT
+
+# Keep the sudo timestamp warm. The userspace transaction can spend twenty
+# minutes downloading, and the default timestamp expires in five - so without
+# this, the step after it stops on a password prompt in a script that had
+# otherwise stopped needing anybody.
+if ! (( DRYRUN )); then
+  ( while sleep 45; do
+      kill -0 "$$" 2>/dev/null || exit 0
+      sudo -n true 2>/dev/null || exit 0
+    done ) &
+  KEEPALIVE=$!
+fi
 
 # ---------------------------------------------------------------- preflight
 log "Preflight"
@@ -161,7 +272,7 @@ log "Installing the Omarchy signing keyring"
 if ! (( DRYRUN )) && sudo pacman-key --list-keys "$KEY_FPR" &>/dev/null; then
   log "Key $KEY_FPR already trusted."
 else
-  tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
+  tmp="$(mktemp -d)"; KEYRING_TMP="$tmp"
   curl -fsSL "$DB_URL/omarchy.db" -o "$tmp/omarchy.db" || die "cannot reach $DB_URL" "Nothing has been installed. The guards are in place and harmless." "Check connectivity:  curl -I $DB_URL/omarchy.db" "If you use a VPN, try without it - throttled links time out here." "Remove the guards if you are abandoning the install:  ./block-omarchy-updates.sh --undo"
   bsdtar -xf "$tmp/omarchy.db" -C "$tmp"
   kdesc="$(find "$tmp" -maxdepth 2 -path '*omarchy-keyring-*/desc' | head -1)"
@@ -169,7 +280,7 @@ else
   kfile="$(grep -A1 '^%FILENAME%$' "$kdesc" | tail -1)"
   log "Fetching $kfile"
   curl -fsSL "$DB_URL/$kfile" -o "$tmp/$kfile" || die "keyring download failed" "Nothing has been installed." "Retry, or fetch by hand:  curl -O $DB_URL/<keyring-file>"
-  run sudo pacman -U --noconfirm "$tmp/$kfile"
+  pac -U "$tmp/$kfile"
   if ! (( DRYRUN )); then
     sudo pacman-key --populate omarchy 2>/dev/null || true
     sudo pacman-key --list-keys "$KEY_FPR" &>/dev/null \
@@ -190,11 +301,11 @@ else
       | sudo tee -a /etc/pacman.conf >/dev/null
   fi
 fi
-run sudo pacman -Sy
+pac -Sy
 
 # ------------------------------------------------------------ install
 log "Installing the omarchy package (sddm assumed-installed: your display manager is kept)"
-run sudo pacman -S --needed --noconfirm omarchy --assume-installed sddm \
+pac -S --needed omarchy --assume-installed sddm \
       --overwrite '/etc/skel/.config/alacritty/*'
 
 # ---- HARD GATE: verify the boot guards actually held -------------------
@@ -235,7 +346,7 @@ if [[ -r $PKGFILE ]]; then
     (( keep )) && want+=("$p")
   done
   log "Installing Omarchy userspace: ${#want[@]} packages (skipping: ${skip[*]})"
-  run sudo pacman -S --needed --noconfirm "${want[@]}"
+  pac -S --needed "${want[@]}"
 elif (( DRYRUN )); then
   echo "   [dry-run] $PKGFILE does not exist yet (it ships inside the omarchy package)."
   echo "   [dry-run] On the real run this installs the full Omarchy userspace"

@@ -63,6 +63,48 @@ candidate. That is how the `tealdeer` case presents, and a forward-only scan mis
 
 ---
 
+## `error: failed to commit transaction (failed to retrieve some files)`
+
+```text
+ omarchy-4.0.2-1-any.pkg.tar.zst failed to download
+error: failed retrieving file 'gum-0.17.0-1.1-x86_64_v3.pkg.tar.zst' from mirror.krfoss.org
+       : The requested URL returned error: 404
+error: failed retrieving file 'omarchy-4.0.2-1-any.pkg.tar.zst' from pkgs.omarchy.org
+       : HTTP/2 stream 1 reset by server (error 0x2 INTERNAL_ERROR)
+```
+
+Nothing is wrong with the machine, and nothing is half-installed — pacman rolls a failed
+transaction back whole. The two causes above look alike and are not:
+
+- **404** — the local database lists a file the mirror no longer carries. Only a *forced*
+  refresh fixes that: `pacman -Syy`. A plain `-Sy` or `-Syu` will not, because as far as
+  pacman is concerned the database it already has is current.
+- **reset, timeout, "transfer closed"** — the mirror or CDN dropped a long transfer. Asking
+  again is the whole fix.
+
+[`install-omarchy-on-cachyos.sh`](../install-omarchy-on-cachyos.sh) does all of that by
+itself. Every transaction is retried up to four times with a widening pause; a 404 forces the
+refresh first; a package that arrives corrupted is deleted out of `/var/cache/pacman/pkg` so
+the retry fetches it instead of re-validating the same broken file; and every transaction
+carries `--disable-download-timeout`, because a 20 KiB/s mirror is slow, not dead, and the
+default low-speed cutoff throws away the entire transfer over it. Whatever already downloaded
+stays in the cache, so a re-run resumes rather than restarts.
+
+By hand, the same sequence is:
+
+```bash
+sudo pacman -Syy                                    # only needed after a 404
+sudo pacman -S --needed --disable-download-timeout omarchy   # resumes from the cache
+```
+
+If one mirror is reliably slow or broken, re-rank them first:
+
+```bash
+sudo cachyos-rate-mirrors
+```
+
+---
+
 ## `pacman -Si <name>` says "package not found" but installation works
 
 `pacman -Si` does not resolve **virtual provides**. `nvim` is not a package; `neovim`
