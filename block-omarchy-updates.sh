@@ -210,7 +210,12 @@ self=$(basename "$0")
 msg="'$self' is blocked on this machine. Use: sudo pacman -Syu"
 
 if [[ -n ${OMARCHY_ALLOW_DANGEROUS:-} ]]; then
-  real="/usr/local/share/omarchy-blocked/$(echo "${0#/}" | tr / _)"
+  # The vault location is overridable so this path can be exercised against a
+  # fixture. It is not a privilege boundary: reaching here already needs
+  # OMARCHY_ALLOW_DANGEROUS, and anyone able to set one variable can set two -
+  # or simply run the stashed binary directly.
+  vault="${OMARCHY_BLOCKED_VAULT:-/usr/local/share/omarchy-blocked}"
+  real="$vault/$(echo "${0#/}" | tr / _)"
   if [[ -x $real ]] && ! grep -q "OMARCHY-BLOCKED-GUARD" "$real" 2>/dev/null; then
     echo "OMARCHY_ALLOW_DANGEROUS set - running the real $self." >&2
     exec "$real" "$@"

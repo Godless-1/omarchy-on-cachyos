@@ -185,7 +185,7 @@ this page would be worth less if this section were missing.
 | `clean-stale-boot-entries.sh --archive` | **Exercised once** on a real machine, and in a fixture by `test/test-boot-cleanup.sh` |
 | `uninstall-omarchy-on-cachyos.sh` | **Never run.** Written, linted, syntax-checked only |
 | `block-omarchy-updates.sh --undo` | **Exercised in a fixture.** `test/test-block-undo.sh` runs the full block/undo cycle against a tree under `OC_ROOT` and checks the originals come back byte-identical, that a second block does not stash a guard over them, and that both dry runs change nothing. Still never run against a real `/usr/bin` |
-| `OMARCHY_ALLOW_DANGEROUS=1` override | **Never run** |
+| `OMARCHY_ALLOW_DANGEROUS=1` override | **Exercised in a fixture.** The guard blocks and names the override; the override refuses with nothing stashed, refuses to loop when the stash is itself a guard, and otherwise execs the original with arguments intact |
 | `clean-stale-boot-entries.sh --delete` | **Exercised in a fixture.** Removes the orphan, leaves the active entry and its payload intact. Never run against a real `/boot` |
 | The "bootloader still references it" refusal | **Exercised in a fixture.** A config naming the orphan makes it warn, refuse, exit non-zero and change nothing. Never triggered on real hardware |
 | `verify-reboot-safety.sh` on a busybox initramfs | **Never run.** That branch is reasoned, not observed |
