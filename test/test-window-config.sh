@@ -96,6 +96,7 @@ printf '\n\033[1;34m== survives a host without KDE\033[0m\n'
 # never started on a host without qdbus, while its own error text offered advice
 # for that case. This machine has qdbus, so only CI (which does not) exercises
 # the real path; the guard here is that the fix cannot be quietly removed.
+# shellcheck disable=SC2016  # the literal source text, not something to expand
 qline=$(grep -n 'QDBUS=\$(' "$HERE/omarchy-window" | head -1)
 if [[ $qline == *"|| true"* ]]; then
   ok "the qdbus lookup cannot abort the script when qdbus is absent"
