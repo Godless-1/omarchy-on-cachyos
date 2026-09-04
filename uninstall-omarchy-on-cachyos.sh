@@ -8,6 +8,18 @@
 #   --keep-apps  remove the session + repo but keep the installed applications
 
 set -euo pipefail
+
+# Test seam, as in block-omarchy-updates.sh and clean-stale-boot-entries.sh.
+# Unset in normal use, so every path is the real one. Set, the whole removal runs
+# against a fixture - which is the only way this script, listed as never run
+# since the first release, gets exercised at all.
+: "${OC_ROOT:=}"
+if [[ -n $OC_ROOT ]]; then
+  sudo() { while [[ ${1:-} == -* ]]; do shift; done; (( $# )) || return 0; "$@"; }
+fi
+SESSION="$OC_ROOT/usr/share/wayland-sessions/omarchy.desktop"
+PACCONF="$OC_ROOT/etc/pacman.conf"
+
 DRYRUN=0; KEEP_APPS=0
 for a in "$@"; do case "$a" in
   --dry-run) DRYRUN=1 ;; --keep-apps) KEEP_APPS=1 ;;
@@ -28,7 +40,8 @@ run_to() {
   else "$@" > "$out"; fi
 }
 
-(( EUID == 0 )) && { echo "Run as your normal user." >&2; exit 1; }
+# Refusing root is right for a real removal and meaningless against a fixture.
+[[ -z $OC_ROOT ]] && (( EUID == 0 )) && { echo "Run as your normal user." >&2; exit 1; }
 sudo -v
 
 # Do this before anything is removed. A nested window that was killed mid-session
@@ -54,7 +67,7 @@ if [[ -d $_skilldst ]]; then
   for _sk in "$_skilldst"/*; do
     [[ -L $_sk ]] || continue
     case "$(readlink "$_sk")" in
-      /usr/share/omarchy/*) run rm -f "$_sk"; _unlinked=$((_unlinked+1)) ;;
+      "$OC_ROOT"/usr/share/omarchy/*) run rm -f "$_sk"; _unlinked=$((_unlinked+1)) ;;
     esac
   done
   log "Unlinked $_unlinked skill(s); anything you added yourself was left alone"
@@ -63,7 +76,7 @@ if [[ -d $_skilldst ]]; then
 fi
 
 log "Removing the Omarchy session entry"
-run sudo rm -f /usr/share/wayland-sessions/omarchy.desktop
+run sudo rm -f "$SESSION"
 
 if (( ! KEEP_APPS )); then
   log "Removing omarchy packages (leaving shared deps like hyprland/pipewire in place)"
@@ -74,37 +87,44 @@ else
   log "--keep-apps: leaving packages installed"
 fi
 
-log "Removing the [omarchy] repo from /etc/pacman.conf"
-if grep -q '^\[omarchy\]' /etc/pacman.conf; then
-  run sudo cp /etc/pacman.conf /etc/pacman.conf.pre-omarchy-removal
+log "Removing the [omarchy] repo from $PACCONF"
+if grep -q '^\[omarchy\]' "$PACCONF"; then
+  run sudo cp "$PACCONF" "$PACCONF.pre-omarchy-removal"
   if (( ! DRYRUN )); then
     sudo awk '
       /^\[omarchy\]$/ { skip=1; next }
       skip && /^\[/    { skip=0 }
       skip && (/^SigLevel/ || /^Server/ || /^[[:space:]]*$/) { next }
       { print }
-    ' /etc/pacman.conf | sudo tee /etc/pacman.conf.new >/dev/null
-    sudo mv /etc/pacman.conf.new /etc/pacman.conf
+    ' "$PACCONF" | sudo tee "$PACCONF".new >/dev/null
+    sudo mv "$PACCONF".new "$PACCONF"
   fi
 fi
 
 log "Removing the NoExtract guards"
-if grep -q 'omarchy-on-cachyos guards' /etc/pacman.conf && (( ! DRYRUN )); then
+if grep -q 'omarchy-on-cachyos guards' "$PACCONF" && (( ! DRYRUN )); then
   sudo awk '
     /omarchy-on-cachyos guards \(do not remove\)/ { skip=1; next }
     /end omarchy-on-cachyos guards/ { skip=0; next }
     !skip { print }
-  ' /etc/pacman.conf | sudo tee /etc/pacman.conf.new >/dev/null
-  sudo mv /etc/pacman.conf.new /etc/pacman.conf
+  ' "$PACCONF" | sudo tee "$PACCONF".new >/dev/null
+  sudo mv "$PACCONF".new "$PACCONF"
 fi
 
 log "Checking for leftover Omarchy files in /etc"
-for f in /etc/mkinitcpio.conf.d/omarchy_hooks.conf /etc/limine-entry-tool.d/omarchy-*.conf; do
-  [[ -e $f ]] && { warn "leftover: $f"; run "sudo rm -f '$f'"; }
+for f in "$OC_ROOT"/etc/mkinitcpio.conf.d/omarchy_hooks.conf "$OC_ROOT"/etc/limine-entry-tool.d/omarchy-*.conf; do
+  # An argument vector, like every other call here. This was one quoted string,
+  # so it tried to exec a command literally named `sudo rm -f '/etc/...'`, exited
+  # 127, and under `set -e` ended the uninstall on the spot - leaving both files
+  # on disk, skipping the sd-encrypt check below and the database refresh, and
+  # ending with "No such file or directory" instead of "Removal complete".
+  # These are the two boot-hazard files this project exists to keep off the
+  # machine, so the one path that removes them never did.
+  [[ -e $f ]] && { warn "leftover: $f"; run sudo rm -f "$f"; }
 done
 
 if (( ! DRYRUN )); then
-  eff="$(sudo bash -c 'HOOKS=(); . /etc/mkinitcpio.conf; for f in /etc/mkinitcpio.conf.d/*.conf; do [ -e "$f" ] && . "$f"; done; echo "${HOOKS[*]}"')"
+  eff="$(sudo bash -c 'r="$1"; HOOKS=(); . "$r/etc/mkinitcpio.conf"; for f in "$r"/etc/mkinitcpio.conf.d/*.conf; do [ -e "$f" ] && . "$f"; done; echo "${HOOKS[*]}"' _ "$OC_ROOT")"
   echo "    effective HOOKS: $eff"
   grep -q rd.luks /proc/cmdline && [[ $eff != *sd-encrypt* ]] && warn "sd-encrypt MISSING - do not reboot until fixed."
 fi

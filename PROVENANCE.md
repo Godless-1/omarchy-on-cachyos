@@ -183,7 +183,7 @@ this page would be worth less if this section were missing.
 | `block-omarchy-updates.sh` (install path) | **Exercised.** All four binaries guarded, `NoExtract` present, originals stashed |
 | `preserve-cachyos-identity.sh --apply` | **Exercised.** Branding restored and confirmed with fastfetch |
 | `clean-stale-boot-entries.sh --archive` | **Exercised once** on a real machine, and in a fixture by `test/test-boot-cleanup.sh` |
-| `uninstall-omarchy-on-cachyos.sh` | **Never run.** Written, linted, syntax-checked only |
+| `uninstall-omarchy-on-cachyos.sh` | **Exercised in a fixture.** `test/test-uninstall.sh` runs the removal with a recording `pacman`: session entry, `[omarchy]` repo, guards block and leftover boot-hazard files all go, `[cachyos]` and your own skills stay. Running it for the first time found that it exited 127 partway through whenever a leftover file existed. Never run against a real system |
 | `block-omarchy-updates.sh --undo` | **Exercised in a fixture.** `test/test-block-undo.sh` runs the full block/undo cycle against a tree under `OC_ROOT` and checks the originals come back byte-identical, that a second block does not stash a guard over them, and that both dry runs change nothing. Still never run against a real `/usr/bin` |
 | `OMARCHY_ALLOW_DANGEROUS=1` override | **Exercised in a fixture.** The guard blocks and names the override; the override refuses with nothing stashed, refuses to loop when the stash is itself a guard, and otherwise execs the original with arguments intact |
 | `clean-stale-boot-entries.sh --delete` | **Exercised in a fixture.** Removes the orphan, leaves the active entry and its payload intact. Never run against a real `/boot` |

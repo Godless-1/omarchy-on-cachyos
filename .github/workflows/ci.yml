@@ -90,6 +90,8 @@ jobs:
         run: ./test/test-block-undo.sh
       - name: Run the boot-cleanup test suite
         run: ./test/test-boot-cleanup.sh
+      - name: Run the uninstall test suite
+        run: ./test/test-uninstall.sh
 
   package:
     name: makepkg + namcap
