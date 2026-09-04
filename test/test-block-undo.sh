@@ -138,6 +138,7 @@ printf '\n\033[1;34m== root is still refused on a real system\033[0m\n'
 # that relaxation must stay tied to OC_ROOT. Asserted statically: exercising it
 # for real would mean letting a root process loose on /usr/bin to find out.
 guard=$(grep -n 'EUID == 0' "$HERE/block-omarchy-updates.sh" | head -1)
+# shellcheck disable=SC2016  # the literal source text being matched
 if [[ $guard == *'-z $OC_ROOT'* ]]; then
   ok "the root refusal is skipped only under OC_ROOT"
 else
