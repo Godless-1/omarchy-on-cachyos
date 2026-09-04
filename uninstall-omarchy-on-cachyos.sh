@@ -44,6 +44,24 @@ if [[ -x $_shortcuts && -f $_sbak ]]; then
   run "$_shortcuts" restore
 fi
 
+log "Unlinking Omarchy's agent skills from your Claude Code config"
+# Only symlinks that point into the Omarchy package. Anything else under
+# skills/ is the user's own and is left exactly where it is - and once the
+# package goes, these would dangle.
+_skilldst="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+if [[ -d $_skilldst ]]; then
+  _unlinked=0
+  for _sk in "$_skilldst"/*; do
+    [[ -L $_sk ]] || continue
+    case "$(readlink "$_sk")" in
+      /usr/share/omarchy/*) run rm -f "$_sk"; _unlinked=$((_unlinked+1)) ;;
+    esac
+  done
+  log "Unlinked $_unlinked skill(s); anything you added yourself was left alone"
+  # Only if we emptied it. rmdir refuses a non-empty directory, which is the check.
+  rmdir "$_skilldst" 2>/dev/null && echo "      removed the now-empty $_skilldst" || true
+fi
+
 log "Removing the Omarchy session entry"
 run sudo rm -f /usr/share/wayland-sessions/omarchy.desktop
 

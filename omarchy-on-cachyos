@@ -33,7 +33,11 @@ HERE="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 BLUE="#7aa2f7"; PURPLE="#bb9af7"; GREEN="#9ece6a"
 RED="#f7768e";  ORANGE="#ff9e64"; MUTED="#9aa5ce"; FG="#c0caf5"
 
-have_gum() { command -v gum >/dev/null 2>&1; }
+# OC_ROOT is only ever set by the test suite, and gum wants a TTY it will not
+# have there - so the menus fall back to plain prompts, which a test can answer.
+# Without this the fix path could only ever be tested by reimplementing it, and a
+# reimplementation is not the thing that ships.
+have_gum() { [[ -z ${OC_ROOT:-} ]] && command -v gum >/dev/null 2>&1; }
 
 # Test hook. Unset in normal use, so _p is the identity function and every path
 # below is the real one. Setting OC_ROOT to a directory lets the test suite build
@@ -209,6 +213,30 @@ print(len(d.get("entries") or []))' "$kbak" 2>/dev/null) || n="some"
       "$HERE/omarchy-window-shortcuts restore"
   fi
 
+  # --- agent skills -------------------------------------------------------
+  # Omarchy ships skills for coding agents and links them into each agent's
+  # config from omarchy-provision-user. We deliberately never run that script -
+  # it also rewrites your XDG user directories and rmdir's ~/Desktop, ~/Templates
+  # and ~/Public - so on an install done this way the skills are simply absent,
+  # and Claude Code cannot answer questions about Hyprland or Omarchy config that
+  # it answers on a stock Omarchy machine. omarchy-agent-crash expects the
+  # diagnose-crash one to exist.
+  local skillsrc skilldst nlink=0 sk
+  skillsrc=$(_p /usr/share/omarchy/default/agents/skills)
+  skilldst="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+  if (( installed )) && [[ -d $skillsrc ]]; then
+    for sk in "$skillsrc"/*/; do
+      [[ -d $sk ]] || continue
+      [[ -e "$skilldst/$(basename "${sk%/}")" ]] || nlink=$((nlink+1))
+    done
+    if (( nlink > 0 )); then
+      add LOW skills \
+        "$nlink Omarchy agent skill(s) are missing from your Claude Code config" \
+        "A stock Omarchy install symlinks these into $skilldst so the agent can answer questions about Hyprland, theming, hooks and Omarchy's own commands. They are read-only symlinks into the omarchy-settings package, and they change nothing about how Claude Code starts - only what it knows." \
+        "link-agent-skills"
+    fi
+  fi
+
   # --- convenience ------------------------------------------------------
   if (( installed )) && [[ ! -e "$(_p /usr/share/wayland-sessions/omarchy.desktop)" ]]; then
     add LOW session \
@@ -268,6 +296,23 @@ apply_fix() { # apply_fix <id> <fix>
         [[ -f $m ]] || continue; touch "$d/$(basename "$m")"; n=$((n+1))
       done
       good "  marked $n migration(s); omarchy-migrate --pending is now empty"
+      return 0 ;;
+    link-agent-skills)
+      # Symlinks, not copies, exactly as omarchy-provision-user makes them: the
+      # skills then track the package instead of going stale at the version that
+      # happened to be installed the day this ran.
+      local src dst s k=0
+      src=$(_p /usr/share/omarchy/default/agents/skills)
+      dst="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+      note "  \$ linking Omarchy's agent skills into $dst"
+      mkdir -p "$dst" || { bad "  could not create $dst"; return 1; }
+      for s in "$src"/*/; do
+        [[ -d $s ]] || continue
+        s=${s%/}
+        ln -sfn "$s" "$dst/${s##*/}" && k=$((k+1))
+      done
+      if (( k > 0 )); then good "  linked $k skill(s); a new Claude Code session picks them up"
+      else bad "  found no skills under $src"; return 1; fi
       return 0 ;;
     *)
       note "  \$ $fix"

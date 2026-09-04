@@ -128,3 +128,30 @@ Both packages ship `/etc/skel` content and the installer seeds from **both** —
 Seeding is strictly **copy-if-absent**. An existing file is never overwritten, never backed
 up over, and never merged; it is reported and left alone. Omarchy's version stays available
 under `/etc/skel/` for manual comparison.
+
+### Agent skills
+
+Omarchy ships skills for coding agents under
+`/usr/share/omarchy/default/agents/skills/` — currently `omarchy` (Hyprland, theming,
+hooks, plugins, the `omarchy-*` commands) and `diagnose-crash`, which
+`omarchy-agent-crash` expects to exist.
+
+A stock Omarchy install links them into every agent's config from
+`omarchy-provision-user`. **This project never runs that script**: alongside the skills it
+also rewrites your XDG user directories and `rmdir`s `~/Desktop`, `~/Templates` and
+`~/Public`, which is not a thing to do to a machine that already has a desktop. So the
+installer links the skills itself, and nothing else from that script.
+
+They are symlinks rather than copies, exactly as upstream makes them, so they track the
+package instead of freezing at whatever version shipped the day you installed. The
+destination follows `CLAUDE_CONFIG_DIR` when it is set, and is `~/.claude/skills`
+otherwise.
+
+`omarchy-on-cachyos check` reports any that are missing and can link them, so an install
+made before this existed can be brought up to parity without reinstalling. The uninstaller
+removes only symlinks pointing into `/usr/share/omarchy/` — anything you put there
+yourself is left alone.
+
+**This changes what the agent knows, not what it prints.** Claude Code's startup output is
+byte-for-byte identical with and without them; the skills are surfaced to the model, not to
+the terminal.

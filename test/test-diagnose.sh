@@ -40,9 +40,30 @@ new_root() {
   echo "$r"
 }
 
-# XDG_DATA_HOME is cleared so the shortcut-backup probe resolves under the fake
-# HOME rather than wherever the machine running the tests keeps its own.
-check() { OC_ROOT="$1" HOME="$1/home" XDG_DATA_HOME='' "$TOOL" check 2>&1; }
+# XDG_DATA_HOME and CLAUDE_CONFIG_DIR are cleared so the shortcut-backup and
+# agent-skill probes resolve under the fake HOME rather than wherever the machine
+# running the tests keeps its own. A developer with CLAUDE_CONFIG_DIR exported
+# would otherwise test their own config directory.
+check() { OC_ROOT="$1" HOME="$1/home" XDG_DATA_HOME='' CLAUDE_CONFIG_DIR='' "$TOOL" check 2>&1; }
+
+# Drive the interactive fix flow. have_gum() is false under OC_ROOT, so this
+# reaches the plain "Apply all fixes?" prompt rather than a menu wanting a TTY.
+fix_all() { printf 'y\n' | OC_ROOT="$1" HOME="$1/home" XDG_DATA_HOME='' \
+              CLAUDE_CONFIG_DIR='' "$TOOL" fix 2>&1; }
+
+# The skills omarchy-settings ships, and optionally the symlinks a stock Omarchy
+# install would have made into the agent's config.
+omarchy_skills() { # omarchy_skills <root> [link:none|all|partial]
+  local r="$1" mode="${2:-none}" src="$1/usr/share/omarchy/default/agents/skills"
+  mkdir -p "$src/omarchy" "$src/diagnose-crash"
+  printf -- '---\nname: omarchy\n---\n'        > "$src/omarchy/SKILL.md"
+  printf -- '---\nname: diagnose-crash\n---\n' > "$src/diagnose-crash/SKILL.md"
+  [[ $mode == none ]] && return 0
+  mkdir -p "$r/home/.claude/skills"
+  ln -sfn "$src/omarchy" "$r/home/.claude/skills/omarchy"
+  [[ $mode == all ]] && ln -sfn "$src/diagnose-crash" "$r/home/.claude/skills/diagnose-crash"
+  return 0
+}
 
 # Leave a shortcut backup behind. `holders` is the JSON for that field: "[]" is
 # an abandoned borrow (a killed session), a live pid means a window still needs
@@ -81,6 +102,12 @@ expect()     { local d="$1" w="$2" o="$3"; if grep -qF "$w" <<<"$o"; then ok "$d
                  printf '        got:\n'; head -14 <<<"$o" | sed 's/^/          /'; fi; }
 expect_not() { local d="$1" w="$2" o="$3"; if grep -qF "$w" <<<"$o"; then
                  nope "$d"; head -14 <<<"$o" | sed 's/^/          /'; else ok "$d"; fi; }
+# Detail text is folded to 72 columns for display, so any phrase long enough to
+# be worth asserting on will eventually straddle a line break - and would then
+# fail for a reflow rather than a regression. Flatten whitespace first.
+expect_flat() { local d="$1" w="$2" o; o=$(tr -s '[:space:]' ' ' <<<"$3")
+                if grep -qF "$w" <<<"$o"; then ok "$d"; else
+                  nope "$d"; printf '        wanted (flattened): %s\n' "$w"; fi; }
 
 printf '\n\033[1;34m== fault detection\033[0m\n'
 
@@ -162,6 +189,42 @@ R=$(new_root); mkdir -p "$R/home/.config/omarchy/branding"
 printf 'OMARCHY-ART\n' > "$R/home/.config/omarchy/branding/about.txt"
 expect_not "says nothing when the branding was never changed" \
   "branding has come back" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); omarchy_skills "$R" none
+expect "detects agent skills a stock Omarchy install would have linked" \
+  "2 Omarchy agent skill(s) are missing" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); omarchy_skills "$R" partial
+expect "counts only the skills that are actually missing" \
+  "1 Omarchy agent skill(s) are missing" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); omarchy_skills "$R" all
+expect_not "stays quiet once every skill is linked" \
+  "Omarchy agent skill" "$(check "$R")"; rm -rf "$R"
+
+# Omarchy not shipping skills at all is not a fault to report.
+R=$(new_root)
+expect_not "says nothing when Omarchy ships no skills to link" \
+  "Omarchy agent skill" "$(check "$R")"; rm -rf "$R"
+
+R=$(new_root); omarchy_skills "$R" none
+expect_flat "  says plainly that this does not change how Claude Code starts" \
+  "change nothing about how Claude Code starts - only what it knows" "$(check "$R")"; rm -rf "$R"
+
+# Detection is half the feature. Apply the fix and prove the links resolve -
+# a symlink that exists but dangles would satisfy a laxer check and still leave
+# the agent knowing nothing.
+R=$(new_root); omarchy_skills "$R" none
+touch "$R/home/.local/share/applications/omarchy-window.desktop"   # keep other fixes quiet
+fix_all "$R" >/dev/null 2>&1
+if [[ -f "$R/home/.claude/skills/omarchy/SKILL.md" \
+   && -f "$R/home/.claude/skills/diagnose-crash/SKILL.md" ]]; then
+  ok "applying the fix links every skill, and each resolves to a readable SKILL.md"
+else
+  nope "applying the fix did not produce resolving skill links"
+fi
+expect_not "  and the finding is gone on the next check" \
+  "Omarchy agent skill" "$(check "$R")"; rm -rf "$R"
 
 printf '\n\033[1;34m== limine boot-entry duplication\033[0m\n'
 # A real failure, twice over. First: an orphaned OS entry kept stale

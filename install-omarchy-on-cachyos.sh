@@ -405,6 +405,30 @@ else
   warn "omarchy-settings not installed; skipped config seeding."
 fi
 
+log "Linking Omarchy's agent skills into your Claude Code config"
+# A stock Omarchy install does this from omarchy-provision-user, which we never
+# run: the same script also rewrites your XDG user directories and rmdir's
+# ~/Desktop, ~/Templates and ~/Public. Only the skills part belongs here.
+# Symlinks rather than copies, exactly as upstream makes them, so they track the
+# package instead of freezing at whatever shipped today.
+SKILLSRC=/usr/share/omarchy/default/agents/skills
+SKILLDST="${CLAUDE_CONFIG_DIR:-$HOME/.claude}/skills"
+if [[ -d $SKILLSRC ]]; then
+  linked=0
+  run mkdir -p "$SKILLDST"
+  for sk in "$SKILLSRC"/*/; do
+    [[ -d $sk ]] || continue
+    sk=${sk%/}
+    run ln -sfn "$sk" "$SKILLDST/${sk##*/}"
+    linked=$((linked+1))
+  done
+  log "Linked $linked skill(s) into $SKILLDST"
+  echo "      They change nothing about how Claude Code starts - only what it knows"
+  echo "      about Hyprland, theming and Omarchy's own commands."
+else
+  warn "No agent skills found under $SKILLSRC; nothing to link."
+fi
+
 # ------------------------------------------------------------ done
 cat <<EOF
 
