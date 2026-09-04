@@ -13,17 +13,30 @@
 #   ./clean-stale-boot-entries.sh --archive  # move them out of /boot (default action)
 #   ./clean-stale-boot-entries.sh --delete   # remove them outright
 #
+# It also reports orphaned *entries inside limine.conf*, which are a different
+# fault with the same cause. limine-entry-tool titles its top-level OS entry from
+# NAME/PRETTY_NAME in /etc/os-release and keys on that title, so a changed
+# distribution name makes it write a new entry and abandon the old. The abandoned
+# one keeps the hashes it had that day and stops booting, while still sitting in
+# the menu - the good-looking entry being the dead one.
+#
+#   ./clean-stale-boot-entries.sh --remove-stale-entry   # remove it, then regenerate
+#
 # The active entry token is never touched, and the script refuses to remove anything
 # your bootloader still references.
 
 set -euo pipefail
 
 MODE=report
+REMOVE_ENTRY=0
+# Test seams. Unset in normal use, so both resolve to the real thing.
+LIMINE_CONF="${OC_LIMINE_CONF:-/boot/limine.conf}"
 DEST="${OMARCHY_BOOT_ARCHIVE:-$HOME/.local/share/omarchy-cachyos/stale-boot}"
 for a in "$@"; do
   case "$a" in
     --archive) MODE=archive ;;
     --delete)  MODE=delete ;;
+    --remove-stale-entry) REMOVE_ENTRY=1 ;;
     -h|--help) sed -n '4,19p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "unknown option: $a" >&2; exit 1 ;;
   esac
@@ -41,6 +54,113 @@ die() {
   printf '\n' >&2
   exit 1
 }
+
+# --- orphaned entries inside limine.conf ----------------------------------
+# The config is read directly rather than through limine-entry-tool, whose --help
+# needs root even to print usage. A top-level entry belongs to this machine if
+# something under it loads from boot():/<token>/. The live one is whichever
+# carries the highest snapshot number, because only the live entry keeps being
+# given new ones - the abandoned one is frozen on the day it was orphaned.
+entry_table() { # entry_table <conf> <token>  ->  name<TAB>highest-snapshot
+  local conf="$1" token="$2"
+  { if [[ -r $conf ]]; then cat "$conf"; else sudo cat "$conf"; fi; } 2>/dev/null | awk -v mid="$token" '
+    /^\/[^\/]/ { name = $0; sub(/^\/\+?/, "", name); next }
+    name == "" { next }
+    index($0, "boot():/" mid "/") { claim[name] = 1 }
+    /^[[:space:]]*\/\/\/[0-9]+/ {
+      s = $0; sub(/^[[:space:]]*\/\/\//, "", s); sub(/[^0-9].*$/, "", s)
+      if (s + 0 > snap[name]) snap[name] = s + 0
+    }
+    END { for (n in claim) printf "%s\t%d\n", n, snap[n] }
+  '
+}
+
+entry_check() { # entry_check <conf> <token>
+  local conf="$1" token="$2" rows=() live stale livesnap stalesnap
+  mapfile -t rows < <(entry_table "$conf" "$token" | sort -t"$(printf '\t')" -k2,2nr)
+
+  if (( ${#rows[@]} == 0 )); then
+    warn "No top-level entry in $conf loads from boot():/$token/"
+    echo "      Not necessarily wrong, but nothing here can be judged."
+    echo "      Look by hand:  sudo limine-entry-tool --tree"
+    return 0
+  fi
+  if (( ${#rows[@]} == 1 )); then
+    log "One boot entry claims this machine: ${rows[0]%%$'\t'*}"
+    return 0
+  fi
+
+  live=${rows[0]%%$'\t'*};  livesnap=${rows[0]##*$'\t'}
+  stale=${rows[1]%%$'\t'*}; stalesnap=${rows[1]##*$'\t'}
+
+  warn "${#rows[@]} top-level entries claim this machine - only one can be current"
+  local r
+  for r in "${rows[@]}"; do
+    printf '      %-28s newest snapshot: %s\n' "${r%%$'\t'*}" "${r##*$'\t'}"
+  done
+  echo "      The abandoned ones keep the hashes they had when the distribution"
+  echo "      name changed, so they fail verification and error out instead of"
+  echo "      booting. Your live entry is unaffected."
+
+  # Refuse rather than guess. A tie means neither has newer snapshots than the
+  # other, and picking the wrong one removes the entry that still boots.
+  if (( livesnap == stalesnap )); then
+    warn "Cannot tell which is live: both stop at snapshot $livesnap."
+    echo "      Refusing to choose. Compare them yourself:"
+    echo "        sudo limine-entry-tool --tree"
+    echo "        sudo limine-remove-entry '<the one that is not current>'"
+    echo "        sudo limine-update"
+    return 0
+  fi
+
+  log "Live: '$live' (snapshot $livesnap).  Stale: '$stale' (snapshot $stalesnap)."
+  if (( ! REMOVE_ENTRY )); then
+    echo "      Remove the stale one with:"
+    echo "        $0 --remove-stale-entry"
+    echo "      or by hand, which is the same two commands:"
+    echo "        sudo limine-remove-entry '$stale'"
+    echo "        sudo limine-update"
+    return 0
+  fi
+
+  if (( ${#rows[@]} > 2 )); then
+    warn "More than two entries claim this machine; removing one at a time."
+  fi
+
+  local backup
+  backup="$DEST/limine.conf.$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$DEST"
+  # The redirect is deliberately unprivileged: $backup is in the user's own
+  # directory, and sudo is needed only to read the root-only ESP.
+  # shellcheck disable=SC2024
+  sudo cat "$conf" > "$backup" || die "could not back up $conf" \
+    "Nothing has been changed." "Without a backup this will not touch the bootloader."
+  log "Backed up $conf to $backup"
+
+  log "Removing '$stale' by name"
+  # By name, never by machine-ID-and-position: both entries match the id, so a
+  # wrong position removes the one that still boots.
+  sudo limine-remove-entry "$stale" || die "limine-remove-entry failed" \
+    "Nothing was removed." "Restore if needed:  sudo cp $backup $conf"
+  sudo limine-update || die "limine-update failed after removing '$stale'" \
+    "The entry is gone but the config was not regenerated." \
+    "Restore:  sudo cp $backup $conf" \
+    "Then retry, or run:  sudo limine-update"
+
+  local left; left=$(entry_table "$conf" "$token" | wc -l)
+  if (( left == 1 )); then
+    log "One entry left. Confirm with:  sudo limine-entry-tool --tree"
+  else
+    warn "$left entries still claim this machine; re-run to remove the next."
+  fi
+}
+
+# Test seam: with OC_LIMINE_CONF set, only the entry analysis runs, against that
+# file, with no sudo and no /boot. Everything below needs a real machine.
+if [[ -n ${OC_LIMINE_CONF:-} ]]; then
+  entry_check "$LIMINE_CONF" "${OC_MACHINE_ID:?OC_MACHINE_ID must be set with OC_LIMINE_CONF}"
+  exit 0
+fi
 
 (( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
 sudo -v || die "sudo required" "Nothing has been changed."

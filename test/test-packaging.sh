@@ -45,6 +45,29 @@ while read -r c; do
   else nope "ooc $sub is not a subcommand of omarchy-on-cachyos"; fi
 done <<< "$cmds"
 
+printf '\n\033[1;34m== no build output in the repository\033[0m\n'
+# This has now happened twice. The first time it was 64 makepkg artefacts, which
+# made CI rebuild a stale extracted tree; the second was the bare clone the
+# git-tag source leaves behind, which slipped in through `git add -A` and broke
+# `reuse lint`. Both were invisible in `git status` afterwards, because tracked
+# files are not untracked files - which is exactly why a human check missed it
+# and why this one is mechanical.
+build_junk=$(git -C "$HERE" ls-files \
+  | grep -E '^(src|pkg)/|^omarchy-on-cachyos-[0-9]|\.pkg\.tar\.' || true)
+if [[ -z $build_junk ]]; then
+  ok "no build output is tracked"
+else
+  nope "build output is tracked in git:"
+  while IFS= read -r j; do printf '        %s\n' "$j"; done <<<"$build_junk" | head -8
+fi
+
+# The rule that keeps it out. Asserted directly, because the guard above only
+# fires after the mistake has already been committed.
+for pat in src/ pkg/ 'omarchy-on-cachyos-1.2.3/x'; do
+  if git -C "$HERE" check-ignore -q "$pat"; then ok "gitignore covers $pat"
+  else nope "gitignore does not cover $pat"; fi
+done
+
 printf '\n\033[1;34m== results\033[0m\n'
 printf '  passed: %d   failed: %d\n\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

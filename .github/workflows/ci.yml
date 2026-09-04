@@ -54,7 +54,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install what the suites need
-        run: pacman -Sy --noconfirm --needed python procps-ng
+        # git included: the build-source suite makes throwaway checkouts, and
+        # this container has no git until something asks for it.
+        run: pacman -Sy --noconfirm --needed python procps-ng git
       - name: Run the packaging-consistency test suite
         run: ./test/test-packaging.sh
       - name: Run the diagnostic test suite
@@ -75,18 +77,28 @@ jobs:
         run: ./test/test-pacman-retry.sh
       - name: Run the CI build-source test suite
         run: ./test/test-ci-build-source.sh
+      - name: Run the orphaned boot-entry test suite
+        run: ./test/test-boot-entry-orphans.sh
 
   package:
     name: makepkg + namcap
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
+      # Before the checkout, deliberately. actions/checkout falls back to
+      # downloading a REST tarball when git is absent, which leaves no .git -
+      # and then the build step cannot tag the commit it is meant to build.
+      - name: Install git before checking out, so this is a real clone
+        run: pacman -Sy --noconfirm --needed git
       - uses: actions/checkout@v4
       - name: Prepare a build user (makepkg refuses to run as root)
         run: |
-          pacman -Syu --noconfirm --needed git namcap
+          pacman -Syu --noconfirm --needed namcap
           useradd -m build
           chown -R build:build .
+          # The checkout is owned by build now; git refuses to operate on a
+          # repository it thinks belongs to someone else.
+          su build -c 'git config --global --add safe.directory "$PWD"'
       - name: Validate .SRCINFO is in sync with PKGBUILD
         run: |
           su build -c 'makepkg --printsrcinfo > /tmp/.SRCINFO.gen'
