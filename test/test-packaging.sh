@@ -52,9 +52,19 @@ printf '\n\033[1;34m== no build output in the repository\033[0m\n'
 # `reuse lint`. Both were invisible in `git status` afterwards, because tracked
 # files are not untracked files - which is exactly why a human check missed it
 # and why this one is mechanical.
-build_junk=$(git -C "$HERE" ls-files \
-  | grep -E '^(src|pkg)/|^omarchy-on-cachyos-[0-9]|\.pkg\.tar\.' || true)
-if [[ -z $build_junk ]]; then
+# An empty `git ls-files` means either a clean repository or a tree git cannot
+# read - a checkout downloaded as a tarball answers emptily and would have made
+# this pass for the wrong reason, which is how CI first "passed" it.
+if ! git -C "$HERE" rev-parse --git-dir >/dev/null 2>&1; then
+  nope "cannot check for tracked build output: $HERE is not a git checkout"
+  build_junk=skip
+else
+  build_junk=$(git -C "$HERE" ls-files \
+    | grep -E '^(src|pkg)/|^omarchy-on-cachyos-[0-9]|\.pkg\.tar\.' || true)
+fi
+if [[ $build_junk == skip ]]; then
+  :
+elif [[ -z $build_junk ]]; then
   ok "no build output is tracked"
 else
   nope "build output is tracked in git:"

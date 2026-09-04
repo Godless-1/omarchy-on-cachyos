@@ -52,11 +52,14 @@ jobs:
     # those apart is worse than no test.
     container: archlinux:base-devel
     steps:
-      - uses: actions/checkout@v4
-      - name: Install what the suites need
-        # git included: the build-source suite makes throwaway checkouts, and
-        # this container has no git until something asks for it.
+      # Before the checkout: actions/checkout falls back to a REST tarball when
+      # git is absent, and a tree with no .git makes every `git` assertion in the
+      # suites answer emptily rather than fail.
+      - name: Install what the suites need, before checking out
         run: pacman -Sy --noconfirm --needed python procps-ng git
+      - uses: actions/checkout@v4
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Run the packaging-consistency test suite
         run: ./test/test-packaging.sh
       - name: Run the diagnostic test suite
