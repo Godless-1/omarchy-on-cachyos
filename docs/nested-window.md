@@ -214,6 +214,28 @@ parsed on a guess. `uwsm app --` (the separate binary, used only by
 [`test/test-uwsm-shim.sh`](../test/test-uwsm-shim.sh) extracts the shim from
 `omarchy-window` itself and exercises every one of those cases.
 
+## Ending the session
+
+<kbd>Super</kbd>+<kbd>Q</kbd> quits the window. Omarchy binds nothing to it —
+<kbd>Super</kbd>+<kbd>W</kbd> closes a window and <kbd>Super</kbd>+<kbd>Ctrl</kbd>+<kbd>Q</kbd>
+is the calculator — so this project adds it to the generated config, after Omarchy's own
+bindings so it is added rather than overwritten. A full Omarchy login session is untouched.
+
+It runs `hl.dsp.exit()`, Hyprland's own exit dispatcher, rather than a shell command: the
+compositor tears its clients down itself, and exiting is what triggers the wrapper's cleanup —
+borrowed <kbd>Meta</kbd>+ shortcuts handed back, PATH shim and temporary config removed, and
+the watchdog stopped. Closing the window does the same thing by a different route.
+
+`Hyprland --verify-config` rejects an unknown dispatcher, and the config is verified before
+the window opens, so a typo in that bind fails immediately instead of leaving you inside a
+session with no way out.
+
+To see exactly what will be bound without starting anything:
+
+```bash
+omarchy-window --print-config
+```
+
 ## The keyboard
 
 KWin claims every <kbd>Meta</kbd> combination it holds a global shortcut for *before* the

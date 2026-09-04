@@ -15,9 +15,12 @@
 #   omarchy-window --shared-browser
 #                               # let browser windows open on the host session
 #                               # instead of on this session's own profile
+#   omarchy-window --print-config
+#                               # show the Hyprland config it would use, and stop
 #
-# Close the window to end the session. SUPER+ESCAPE opens Omarchy's system menu;
-# SUPER+W closes a window inside it. SUPER+K lists every binding.
+# SUPER+Q ends the session, as does closing the window. SUPER+ESCAPE opens
+# Omarchy's system menu; SUPER+W closes a window inside it. SUPER+K lists every
+# binding, and is the authority - this list is not.
 
 set -euo pipefail
 
@@ -105,6 +108,7 @@ except Exception:
 }
 
 SIZE=""; MODE=full; USE_RULE=1; DETACH=0; INSTALL_DESKTOP=0; GRAB_KEYS=1; OWN_BROWSER=1
+PRINT_CONFIG=0
 while (($#)); do
   case "$1" in
     # Internal: run the watchdog for an already-started compositor.
@@ -115,6 +119,10 @@ while (($#)); do
     --no-key-grab) GRAB_KEYS=0; shift ;;
     --detach) DETACH=1; shift ;;
     --install-desktop) INSTALL_DESKTOP=1; shift ;;
+    # Print the generated Hyprland config and stop. Touches nothing: no KWin
+    # rule, no borrowed keys, no compositor. The bindings this adds are otherwise
+    # only observable by starting a desktop, which no test can do.
+    --print-config) PRINT_CONFIG=1; USE_RULE=0; GRAB_KEYS=0; shift ;;
     -s|--size) SIZE="$2"; USE_RULE=0; shift 2 ;;
     -h|--help) sed -n '2,15p' "$0" | sed 's/^# \?//'; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
@@ -493,6 +501,17 @@ CFG="$(mktemp -d)/nested.lua"
   if [[ $MODE == bare ]]; then
     echo 'hl.on("hyprland.start", function() hl.exec_cmd("omarchy-launch-shell") end)'
   fi
+  # SUPER+Q ends the nested session. Free to take: Omarchy 4 binds SUPER+W to
+  # close a window and SUPER+CTRL+Q to the calculator, and nothing to SUPER+Q -
+  # checked against default/hypr/bindings/ rather than assumed. Emitted after
+  # Omarchy's own bindings so it adds to them.
+  #
+  # hl.dsp.exit() rather than a shell command, so the compositor tears its
+  # clients down itself. Exiting is what runs this script's cleanup: the borrowed
+  # KDE shortcuts go back, the PATH shim and temporary config are removed, and
+  # the watchdog stops. `Hyprland --verify-config` rejects an unknown dispatcher,
+  # so a typo here fails before the window opens rather than after.
+  echo 'o.bind("SUPER + Q", "Quit this Omarchy window", hl.dsp.exit())'
   echo 'hl.env("GDK_SCALE", "1")'
   # Hyprland's children inherit this, so the shim covers the terminal you open
   # by hand as well as anything the bindings launch. Escaped for Lua, not shell.
@@ -503,6 +522,11 @@ CFG="$(mktemp -d)/nested.lua"
   echo "hl.monitor({ output = \"\", mode = \"${SIZE}@60\", position = \"0x0\", scale = 1 })"
   echo 'pcall(require, "default.hypr.toggles")'
 } > "$CFG"
+
+if (( PRINT_CONFIG )); then
+  cat "$CFG"
+  exit 0
+fi
 
 Hyprland --verify-config -c "$CFG" >/dev/null 2>&1 || {
   echo "Config failed validation:" >&2; Hyprland --verify-config -c "$CFG" >&2; exit 1; }

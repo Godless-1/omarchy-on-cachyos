@@ -82,6 +82,10 @@ jobs:
         run: ./test/test-ci-build-source.sh
       - name: Run the orphaned boot-entry test suite
         run: ./test/test-boot-entry-orphans.sh
+      # Hyprland is not installed here, so the dispatcher check inside this suite
+      # reports SKIP rather than PASS. Everything else in it still runs.
+      - name: Run the nested-config test suite
+        run: ./test/test-window-config.sh
 
   package:
     name: makepkg + namcap

@@ -146,11 +146,17 @@ so the menu and bar work.
 | <kbd>Super</kbd>+<kbd>Return</kbd> | Terminal |
 | <kbd>Super</kbd>+<kbd>W</kbd> | Close window |
 | <kbd>Super</kbd>+<kbd>Escape</kbd> | System menu (lock, restart, log out) |
+| <kbd>Super</kbd>+<kbd>Q</kbd> | **Quit the window** — ends the session and hands your shortcuts back |
 | <kbd>Super</kbd>+<kbd>Shift</kbd>+<kbd>Ctrl</kbd>+<kbd>A</kbd> | Coding agent in a terminal |
 
-<kbd>Super</kbd>+<kbd>Q</kbd> is **not** bound in Omarchy 4 — if you are reaching for it to close
-a window, that is <kbd>Super</kbd>+<kbd>W</kbd>. To close the whole nested session, close the
-window itself.
+<kbd>Super</kbd>+<kbd>Q</kbd> is not bound by Omarchy itself — this project adds it, and only
+inside the window. Omarchy's own bindings are untouched, so the same key does nothing in a
+full Omarchy login session. If you are reaching for it to close a single *window*, that is
+still <kbd>Super</kbd>+<kbd>W</kbd>.
+
+Quitting runs the same shutdown as closing the window: the compositor exits, its clients go
+with it, your borrowed <kbd>Meta</kbd>+ shortcuts are handed back, and the temporary config
+and PATH shim are removed.
 
 ---
 
