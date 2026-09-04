@@ -18,20 +18,47 @@
 
 set -euo pipefail
 
+SELF_DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
 DRYRUN=0
 MARKER="OMARCHY-BLOCKED-GUARD"
-VAULT=/usr/local/share/omarchy-blocked
-PACCONF=/etc/pacman.conf
+
+# Test seam, matching omarchy-on-cachyos. Unset in normal use, so every path
+# below is the real one and this file behaves exactly as it did without it.
+# Set to a directory, the whole block/undo cycle runs against a fixture tree -
+# which is the only way the reversal path, the one the documentation points at
+# most and nobody had ever run, could be exercised at all.
+: "${OC_ROOT:=}"
+# The fixture is owned by whoever runs the tests, so there is nothing to elevate
+# for. Shadowing sudo here rather than editing 24 call sites keeps the diff on a
+# script that replaces system binaries down to the paths themselves.
+if [[ -n $OC_ROOT ]]; then
+  sudo() {
+    # sudo's own options are dropped, not passed on: `sudo -v` refreshes a
+    # timestamp and must succeed having run nothing, where a plain passthrough
+    # would try to execute `-v` and fail the credential check.
+    while [[ ${1:-} == -* ]]; do shift; done
+    (( $# )) || return 0
+    "$@"
+  }
+fi
+
+VAULT=$OC_ROOT/usr/local/share/omarchy-blocked
+PACCONF=$OC_ROOT/etc/pacman.conf
 # Omarchy's pre-transaction hook aborts any direct `pacman -Syu` and directs you
 # to `omarchy update`, which this script blocks. Left in place the two deadlock,
 # and the system cannot be updated at all.
-HOOK=/usr/share/libalpm/hooks/00-omarchy-update-guard.hook
+HOOK=$OC_ROOT/usr/share/libalpm/hooks/00-omarchy-update-guard.hook
 TARGETS=(
-  /usr/bin/omarchy-update
-  /usr/bin/omarchy-refresh-pacman
-  /usr/share/omarchy/bin/omarchy-update
-  /usr/share/omarchy/bin/omarchy-refresh-pacman
+  "$OC_ROOT/usr/bin/omarchy-update"
+  "$OC_ROOT/usr/bin/omarchy-refresh-pacman"
+  "$OC_ROOT/usr/share/omarchy/bin/omarchy-update"
+  "$OC_ROOT/usr/share/omarchy/bin/omarchy-refresh-pacman"
 )
+
+# The vault filename is derived from the logical path, with any test prefix
+# stripped, so a fixture run produces the same names a real one does - and the
+# repair branch below, which looks for `usr_bin_<name>` by hand, still matches.
+vault_key() { local t="${1#"$OC_ROOT"}"; echo "${t#/}" | tr / _; }
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!!\033[0m  %s\n' "$*"; }
@@ -87,7 +114,7 @@ if [[ ${1:-} == "--undo" ]]; then
   log "Restoring originals from $VAULT"
   # /usr/bin first: the /usr/share copies may legitimately be symlinks to them.
   for t in $(printf '%s\n' "${TARGETS[@]}" | sort); do
-    b="$VAULT/$(echo "${t#/}" | tr / _)"
+    b="$VAULT/$(vault_key "$t")"
     if [[ -f $b ]]; then
       do_ sudo install -m 0755 "$b" "$t"
       (( DRYRUN )) && echo "  would restore $t" || echo "  restored $t"
@@ -108,12 +135,25 @@ if [[ ${1:-} == "--undo" ]]; then
 fi
 
 # ------------------------------------------------------------------ block
+# Checked here, before a single binary is replaced. The NoExtract entries are
+# inserted before the installer's end-marker, so without that marker they cannot
+# be written - and discovering that after the commands have been guarded leaves
+# them blocked with nothing stopping pacman restoring them, which is the one
+# state this script exists to avoid.
+if ! (( DRYRUN )) && ! grep -qxF "# --- end omarchy-on-cachyos guards ---" "$PACCONF"; then
+  die "the omarchy-on-cachyos guards block is missing from $PACCONF" \
+      "Nothing has been changed - this is checked before anything is replaced." \
+      "That block is written by the installer, and the NoExtract entries go inside it." \
+      "Create it:  $SELF_DIR/install-omarchy-on-cachyos.sh" \
+      "Or see what happened to it:  grep -n omarchy-on-cachyos $PACCONF"
+fi
+
 do_ sudo mkdir -p "$VAULT"
 
 log "Backing up the real commands to $VAULT"
 for t in "${TARGETS[@]}"; do
   [[ -e $t ]] || continue
-  b="$VAULT/$(echo "${t#/}" | tr / _)"
+  b="$VAULT/$(vault_key "$t")"
   if is_guard "$t"; then
     echo "  $t is already a guard - not overwriting the backup"
   else
@@ -127,7 +167,7 @@ done
 # restore a guard over a guard on --undo.
 for t in "${TARGETS[@]}"; do
   (( DRYRUN )) && break   # the probes below need sudo; a dry run must not prompt
-  b="$VAULT/$(echo "${t#/}" | tr / _)"
+  b="$VAULT/$(vault_key "$t")"
   if sudo test -L "$b"; then
     tgt=$(sudo readlink -f "$b" 2>/dev/null || true)
     if [[ -n $tgt ]] && sudo grep -q "$MARKER" "$tgt" 2>/dev/null; then
@@ -212,6 +252,8 @@ else
   echo "  already absent"
 fi
 
+# The entries are inserted before the installer's end-marker; the precondition
+# for that is checked at the top, before anything has been replaced.
 log "Adding NoExtract entries so pacman never restores the originals"
 for p in usr/bin/omarchy-update usr/bin/omarchy-refresh-pacman \
          usr/share/omarchy/bin/omarchy-update usr/share/omarchy/bin/omarchy-refresh-pacman \
@@ -220,7 +262,10 @@ for p in usr/bin/omarchy-update usr/bin/omarchy-refresh-pacman \
     echo "  already present: $p"
   else
     do_ sudo sed -i "/^# --- end omarchy-on-cachyos guards ---$/i NoExtract = $p" "$PACCONF"
-    echo "  added: $p"
+    # Say what happened, not what was attempted.
+    if (( DRYRUN )); then echo "  would add: $p"
+    elif grep -qxF "NoExtract = $p" "$PACCONF"; then echo "  added: $p"
+    else warn "could not add: $p"; fi
   fi
 done
 grep -q '^NoExtract = usr/bin/omarchy-update$' "$PACCONF" || die "NoExtract insertion failed - the guards are not in place" "The binaries may already be guarded but pacman would restore them on update." "Undo cleanly:  $0 --undo" "Then check pacman.conf is intact:  pacman-conf >/dev/null && echo ok"

@@ -184,7 +184,7 @@ this page would be worth less if this section were missing.
 | `preserve-cachyos-identity.sh --apply` | **Exercised.** Branding restored and confirmed with fastfetch |
 | `clean-stale-boot-entries.sh --archive` | **Exercised once**, on one machine |
 | `uninstall-omarchy-on-cachyos.sh` | **Never run.** Written, linted, syntax-checked only |
-| `block-omarchy-updates.sh --undo` | **Never run** |
+| `block-omarchy-updates.sh --undo` | **Exercised in a fixture.** `test/test-block-undo.sh` runs the full block/undo cycle against a tree under `OC_ROOT` and checks the originals come back byte-identical, that a second block does not stash a guard over them, and that both dry runs change nothing. Still never run against a real `/usr/bin` |
 | `OMARCHY_ALLOW_DANGEROUS=1` override | **Never run** |
 | `clean-stale-boot-entries.sh --delete` | **Never run** |
 | The "bootloader still references it" refusal | **Never triggered** — the one run had no references |
@@ -193,6 +193,10 @@ this page would be worth less if this section were missing.
 
 The untested paths are mostly the reversal ones, which is the uncomfortable half: the code you
 reach for when something has already gone wrong is the code with the least evidence behind it.
+Writing the first of those tests immediately found two faults in the path it covered — the
+NoExtract step announced "added" for entries it had not added, and the precondition that would
+have caught it was checked *after* the binaries had already been replaced, which is the one
+state that script exists to avoid.
 They are short and readable — read them before you rely on them, and keep the backups the
 installer made.
 

@@ -86,6 +86,8 @@ jobs:
       # reports SKIP rather than PASS. Everything else in it still runs.
       - name: Run the nested-config test suite
         run: ./test/test-window-config.sh
+      - name: Run the block/undo reversal test suite
+        run: ./test/test-block-undo.sh
 
   package:
     name: makepkg + namcap
