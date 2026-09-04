@@ -187,7 +187,14 @@ else
   [[ -d /usr/share/omarchy ]] || { echo "Omarchy not installed." >&2; exit 1; }
 fi
 
-QDBUS=$(for q in qdbus6 qdbus-qt6 qdbus; do command -v "$q" >/dev/null && echo "$q" && break; done)
+# `|| true` is load-bearing. With no qdbus installed the loop ends on a failed
+# `command -v`, the command substitution takes that status, and `set -e` kills
+# the script right here - silently, before it prints anything. Every guard below
+# tests `-n ${QDBUS:-}` and copes fine with it being empty; the assignment was
+# the only thing that could not. It meant omarchy-window had never started on a
+# host without qdbus at all, while its own error text offered advice for exactly
+# that case.
+QDBUS=$(for q in qdbus6 qdbus-qt6 qdbus; do command -v "$q" >/dev/null && echo "$q" && break; done) || true
 
 # --- KWin's authoritative work area: screen minus panels -------------------
 workarea() {

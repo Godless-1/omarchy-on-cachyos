@@ -88,6 +88,21 @@ else
   skip "Hyprland not installed - cannot verify the dispatcher here"
 fi
 
+printf '\n\033[1;34m== survives a host without KDE\033[0m\n'
+
+# The QDBUS lookup ends on a failed `command -v` when no qdbus is installed, and
+# an unguarded command substitution takes that status - so `set -e` killed the
+# script there, silently, before printing anything. omarchy-window had therefore
+# never started on a host without qdbus, while its own error text offered advice
+# for that case. This machine has qdbus, so only CI (which does not) exercises
+# the real path; the guard here is that the fix cannot be quietly removed.
+qline=$(grep -n 'QDBUS=\$(' "$HERE/omarchy-window" | head -1)
+if [[ $qline == *"|| true"* ]]; then
+  ok "the qdbus lookup cannot abort the script when qdbus is absent"
+else
+  nope "QDBUS assignment lost its '|| true': $qline"
+fi
+
 printf '\n\033[1;34m== the documentation cannot go stale\033[0m\n'
 
 # The README used to state plainly that SUPER+Q was unbound. Adding the bind made
