@@ -131,6 +131,19 @@ fi
 same "  and changes nothing" "$(snap "$R")" "$s0"
 rm -rf "$R"
 
+printf '\n\033[1;34m== root is still refused on a real system\033[0m\n'
+
+# The root refusal is relaxed only for fixture runs, because CI's container is
+# root. Running the real thing under sudo would leave root-owned files behind, so
+# that relaxation must stay tied to OC_ROOT. Asserted statically: exercising it
+# for real would mean letting a root process loose on /usr/bin to find out.
+guard=$(grep -n 'EUID == 0' "$HERE/block-omarchy-updates.sh" | head -1)
+if [[ $guard == *'-z $OC_ROOT'* ]]; then
+  ok "the root refusal is skipped only under OC_ROOT"
+else
+  nope "root refusal is no longer gated on OC_ROOT: $guard"
+fi
+
 printf '\n\033[1;34m== results\033[0m\n'
 printf '  passed: %d   failed: %d\n\n' "$PASS" "$FAIL"
 (( FAIL == 0 ))

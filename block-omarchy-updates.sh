@@ -104,7 +104,10 @@ do_() {
   "$@"
 }
 
-if (( ! DRYRUN )) && (( EUID == 0 )); then
+# Refusing root is right for a real system - running this under sudo would leave
+# root-owned files behind - but meaningless against a fixture, and CI's container
+# is root. OC_ROOT is only ever set by the test suite.
+if [[ -z $OC_ROOT ]] && (( ! DRYRUN )) && (( EUID == 0 )); then
   die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
 fi
 (( DRYRUN )) || sudo -v || die "sudo required" "Nothing has been changed." "To inspect the current state without sudo:  $0 --status"
