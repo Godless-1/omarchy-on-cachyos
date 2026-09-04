@@ -173,9 +173,19 @@ EOF
   exit 0
 fi
 
-[[ -n ${WAYLAND_DISPLAY:-} ]] || { echo "Needs a Wayland session." >&2; exit 1; }
-command -v Hyprland >/dev/null || { echo "Hyprland not installed." >&2; exit 1; }
-[[ -d /usr/share/omarchy ]] || { echo "Omarchy not installed." >&2; exit 1; }
+# --print-config generates text and stops. It needs none of this - no session to
+# nest in, no compositor to start, no Omarchy to load - and requiring it would
+# mean the config could only be inspected on a machine already able to run it,
+# which is exactly the machine that needs inspecting least.
+if (( PRINT_CONFIG )); then
+  # Never ask KWin for a work area either: a preview must not depend on a running
+  # desktop. Any size produces the same bindings.
+  : "${SIZE:=1280x800}"
+else
+  [[ -n ${WAYLAND_DISPLAY:-} ]] || { echo "Needs a Wayland session." >&2; exit 1; }
+  command -v Hyprland >/dev/null || { echo "Hyprland not installed." >&2; exit 1; }
+  [[ -d /usr/share/omarchy ]] || { echo "Omarchy not installed." >&2; exit 1; }
+fi
 
 QDBUS=$(for q in qdbus6 qdbus-qt6 qdbus; do command -v "$q" >/dev/null && echo "$q" && break; done)
 
