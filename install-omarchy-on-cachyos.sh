@@ -269,7 +269,11 @@ else
   sudo mv /etc/pacman.conf.new /etc/pacman.conf
   sudo rm -f /tmp/.omarchy-guards /etc/pacman.conf.stripped
   grep -q 'omarchy-on-cachyos guards' /etc/pacman.conf || die "guard insertion failed - refusing to continue without the NoExtract guards" "Nothing has been installed yet, so your system is unchanged." "Restore pacman.conf:  sudo cp $BACKUP/pacman.conf /etc/pacman.conf" "Then check it parses:  pacman-conf >/dev/null && echo ok"
-  n=$(grep -c '^NoExtract = ' /etc/pacman.conf)
+  # `grep -c` prints 0 and exits 1 when nothing matches, which under `set -e`
+  # ends the install here rather than reporting zero. The check above means it
+  # cannot currently be zero - but this project has been caught by that exit
+  # status twice already, and the guard costs nothing.
+  n=$(grep -c '^NoExtract = ' /etc/pacman.conf || true); n=${n:-0}
   log "$n NoExtract guard(s) active"
 fi
 
