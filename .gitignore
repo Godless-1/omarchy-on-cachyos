@@ -6,6 +6,11 @@
 src/
 pkg/
 *.pkg.tar.*
+# The git-tag source leaves a bare clone named after the version. git skips it
+# in status because a bare repo looks like a nested repository, not because of
+# any rule - so `git add -A` does not stage it today. That is a thin thing to
+# rely on for build output that plainly does not belong here.
+omarchy-on-cachyos-*/
 *.tar.gz
 *.tar.xz
 
