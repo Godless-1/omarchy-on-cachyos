@@ -88,6 +88,8 @@ jobs:
         run: ./test/test-window-config.sh
       - name: Run the block/undo reversal test suite
         run: ./test/test-block-undo.sh
+      - name: Run the boot-cleanup test suite
+        run: ./test/test-boot-cleanup.sh
 
   package:
     name: makepkg + namcap

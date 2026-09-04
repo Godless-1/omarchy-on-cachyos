@@ -29,8 +29,17 @@ set -euo pipefail
 
 MODE=report
 REMOVE_ENTRY=0
-# Test seams. Unset in normal use, so both resolve to the real thing.
-LIMINE_CONF="${OC_LIMINE_CONF:-/boot/limine.conf}"
+# Test seams. Unset in normal use, so every path is the real one and this script
+# behaves exactly as it did without them. Set, the whole scan/refuse/remove cycle
+# runs against a fixture - which is how the "still referenced" refusal and
+# --delete, both listed for releases as never run, get exercised at all.
+: "${OC_ROOT:=}"
+BOOT="$OC_ROOT/boot"
+LIMINE_CONF="${OC_LIMINE_CONF:-$BOOT/limine.conf}"
+if [[ -n $OC_ROOT ]]; then
+  # Drops sudo's own options, so `sudo -v` succeeds having run nothing.
+  sudo() { while [[ ${1:-} == -* ]]; do shift; done; (( $# )) || return 0; "$@"; }
+fi
 DEST="${OMARCHY_BOOT_ARCHIVE:-$HOME/.local/share/omarchy-cachyos/stale-boot}"
 for a in "$@"; do
   case "$a" in
@@ -162,10 +171,10 @@ if [[ -n ${OC_LIMINE_CONF:-} ]]; then
   exit 0
 fi
 
-(( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
+[[ -z $OC_ROOT ]] && (( EUID == 0 )) && die "Run as your normal user; it will sudo where needed." "Re-run without sudo:  $0 ${*:-}"
 sudo -v || die "sudo required" "Nothing has been changed."
 
-TOKEN=$(cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id 2>/dev/null) \
+TOKEN=$(cat "$OC_ROOT/etc/kernel/entry-token" 2>/dev/null || cat "$OC_ROOT/etc/machine-id" 2>/dev/null) \
   || die "cannot determine the active entry token" "Nothing has been changed - refusing to guess which /boot entries are live." "Check by hand:  cat /etc/kernel/entry-token 2>/dev/null || cat /etc/machine-id"
 [[ -n $TOKEN ]] || die "active entry token is empty - refusing to guess" "Nothing has been changed." "An empty token means every /boot/<hex>/ directory would look orphaned." "Check:  cat /etc/machine-id"
 log "Active entry token: $TOKEN"
@@ -173,7 +182,7 @@ log "Active entry token: $TOKEN"
 # A candidate is a 32-hex-char directory under /boot that is not the active token
 # and actually contains kernel payloads.
 mapfile -t STALE < <(
-  sudo find /boot -mindepth 1 -maxdepth 1 -type d \
+  sudo find "$BOOT" -mindepth 1 -maxdepth 1 -type d \
        -regextype posix-extended -regex '.*/[0-9a-f]{32}$' 2>/dev/null |
   while read -r d; do
     [[ $(basename "$d") == "$TOKEN" ]] && continue
@@ -198,8 +207,8 @@ printf '      total: %s MB\n' "$total"
 # Refuse to strand bootloader entries.
 log "Checking whether the bootloader still references them"
 REFERENCED=0
-for cfg in /boot/limine.conf /boot/limine.cfg /boot/EFI/limine/limine.conf \
-           /boot/loader/entries/*.conf; do
+for cfg in "$BOOT"/limine.conf "$BOOT"/limine.cfg "$BOOT"/EFI/limine/limine.conf \
+           "$BOOT"/loader/entries/*.conf; do
   sudo test -e "$cfg" 2>/dev/null || continue
   for d in "${STALE[@]}"; do
     if sudo grep -qF "$(basename "$d")" "$cfg" 2>/dev/null; then
@@ -234,6 +243,6 @@ case "$MODE" in
 esac
 
 echo
-log "/boot now:"; sudo df -h /boot | tail -1 | sed 's/^/      /'
+log "$BOOT now:"; sudo df -h "$BOOT" | tail -1 | sed 's/^/      /'
 echo
 log "Re-run ./verify-reboot-safety.sh to confirm a clean result."
