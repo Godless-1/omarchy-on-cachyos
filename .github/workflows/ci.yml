@@ -90,6 +90,10 @@ jobs:
         run: ./test/test-block-undo.sh
       - name: Run the boot-cleanup test suite
         run: ./test/test-boot-cleanup.sh
+      - name: Check synthetic privacy fixtures
+        run: bash test/test-fixture-privacy.sh
+      - name: Run the branding restoration test suite
+        run: bash test/test-branding-undo.sh
       - name: Run the uninstall test suite
         run: ./test/test-uninstall.sh
 

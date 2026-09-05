@@ -95,7 +95,7 @@ Roughly the order of work:
 5. **Dry runs.** Every script gained a `--dry-run` and was exercised before touching anything.
 6. **Iteration on real failures.** Two pacman transactions failed. Both were diagnosed from
    the actual error, fixed, and re-run.
-7. **Verification tooling.** A separate script exists purely to prove the machine still boots.
+7. **Verification tooling.** A separate script exists purely to inspect known boot prerequisites.
 
 ## Mistakes made, and corrected
 
@@ -174,7 +174,7 @@ this page would be worth less if this section were missing.
 | --- | --- |
 | The ten diagnostics | **Tested.** `test/test-diagnose.sh` injects each fault into a fake system tree and asserts it is caught; a healthy tree must report nothing. Runs in CI |
 | Every script, statically | **Linted.** `shellcheck` at `-S style`, pinned to one version, in CI |
-| The package | **Built in CI** in an Arch container, asserting all eight commands reach `/usr/bin` |
+| The package | **Built in CI** in an Arch container, asserting all packaged commands reach `/usr/bin` |
 | `install-omarchy-on-cachyos.sh` | **Exercised.** Dry-run plus real runs, including two failed pacman transactions that were diagnosed and fixed |
 | The pacman retry path in that script | **Tested, not exercised.** `test/test-pacman-retry.sh` drives it against a scripted pacman: retry, a forced `-Syy` after a 404, a corrupted cache file discarded by name, an immediate stop on a conflict. It has never met a mirror actually failing - the failure that prompted it was observed, the recovery was not |
 | The sudo keepalive in that script | **Never exercised.** Written, linted, syntax-checked; no run has yet outlived a sudo timestamp |
@@ -211,11 +211,11 @@ the guard to exec anything that is itself a guard.
 
 The operator's machine is not described in this repository. Before publication every file was
 scanned for the username, hostname, LUKS UUID, monitor UUIDs, email address, IP addresses and
-hardware model. All are absent.
+hardware model. That earlier assertion was too broad: a later review found a real machine identifier in test fixtures. See the correction below.
 
 The scripts contain **no hardcoded machine values**. Geometry, work area, output names, UUIDs,
 package lists and paths are all discovered at runtime, which is both why they are portable and
-why they leak nothing. Commits are authored under a GitHub `noreply` address by choice.
+why they need not embed host-specific values. Commits are authored under a GitHub `noreply` address by choice.
 
 The one identifier present is the GitHub account that owns the repository, which is
 unavoidable for a public repository and was chosen deliberately.
@@ -252,7 +252,7 @@ should be running the command on their own system, not comparing against someone
 Nothing here asks for trust:
 
 ```bash
-# Read every line - it is 5 scripts and none are long
+# Review scripts and their recovery paths
 wc -l *.sh omarchy-window
 
 # Watch what it would do, touching nothing, without sudo
@@ -277,3 +277,7 @@ That is a legitimate position and this page exists to let you act on it without 
 time. The findings are reproducible from the commands above, and the licence is
 [copyleft](LICENSING.md) — you are free to reimplement any of it, and to do so knowing exactly
 what the original was and was not.
+
+## Subsequent Codex review
+
+The recovery fixes and stability review after 1.4.6 were written with OpenAI Codex under human direction. The operator authorized the scope and commits; Codex edited code and documentation and ran regression tests. This is distinct from the original Claude-assisted work described above. See [stability and recovery](docs/stability-review.md) for current limitations and a correction to earlier privacy assurances.

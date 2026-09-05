@@ -36,7 +36,7 @@ desktop, they rewrite your initramfs, your bootloader entries and your package r
 On a LUKS-encrypted root that means **your root filesystem stops unlocking**.
 
 This repository installs Omarchy with those behaviours fenced off, and gives you two ways to
-run it — in a window, or as a login session — plus a script that proves your machine still boots.
+run it — in a window, or as a login session — plus a script that checks known boot prerequisites.
 
 ```bash
 git clone https://github.com/Godless-1/omarchy-on-cachyos.git
@@ -79,11 +79,11 @@ Every entry is also a standalone script if you prefer them directly.
 <div align="center">
 
 <a href="PROVENANCE.md"><img src="docs/provenance.svg" width="100%"
-  alt="Build provenance. Written by Claude Opus 5, model claude-opus-5, via Claude Code. Directed by a human who set the scope, reviewed the work, and ran every privileged command. Method: research, then dry-run, then verify empirically, then iterate. Claims were tested on real hardware, not asserted. No secrets, hostnames, UUIDs or personal data were published. Full disclosure in the provenance document."></a>
+  alt="Build provenance. Written by Claude Opus 5, model claude-opus-5, via Claude Code. Directed by a human who set the scope, reviewed the work, and ran every privileged command. Method: research, then dry-run, then verify empirically, then iterate. Claims were tested on real hardware, not asserted. See the provenance document for privacy findings and limitations. Full disclosure in the provenance document."></a>
 
 </div>
 
-> **Build provenance.** The scripts and documentation here were **written by Claude Opus 5
+> **Build provenance.** The scripts and documentation here were **initially written by Claude Opus 5
 > (`claude-opus-5`) in Claude Code**, on 2026-09-01, directed and reviewed throughout by a
 > human operator who ran every privileged command personally. Nothing was generated
 > unattended or committed unread. [**PROVENANCE.md**](PROVENANCE.md) gives the full account,
@@ -245,7 +245,7 @@ one that disables `sshd`. See [docs/migrations.md](docs/migrations.md).
 ./install-omarchy-on-cachyos.sh             # the real thing
 ./block-omarchy-updates.sh                  # fence off the destructive commands
 ./preserve-cachyos-identity.sh --apply      # keep your distro's name and theming
-./verify-reboot-safety.sh                   # prove the machine still boots
+./verify-reboot-safety.sh                   # inspect known boot prerequisites
 ```
 
 Then log out and pick **Omarchy (Hyprland uwsm)**, or run `./omarchy-window --bare` to stay
@@ -296,8 +296,9 @@ cmdline.
 > [!NOTE]
 > The one failure that matters most — a missing `sd-encrypt` on a LUKS root — is caught
 > **before** anything reboots, and your existing initramfs on disk is untouched at that point.
-> The install aborts, tells you not to reboot, and prints the restore commands. You are safe
-> as long as you do not run `mkinitcpio` before fixing it.
+> The installer reports this mismatch and prints recovery instructions. Keep your backups,
+> correct the configuration before rebuilding the initramfs, and inspect the resulting images
+> before rebooting. These checks do not guarantee a successful boot.
 
 ---
 
@@ -317,7 +318,7 @@ instead and the file names in the second column are what you call.
 | `omarchy-oc-install` | [`install-omarchy-on-cachyos.sh`](install-omarchy-on-cachyos.sh) | Guarded install. `--dry-run`, `--minimal` |
 | `omarchy-oc-block-updates` | [`block-omarchy-updates.sh`](block-omarchy-updates.sh) | Fence off the destructive commands. `--undo`, `--status` |
 | `omarchy-oc-preserve-identity` | [`preserve-cachyos-identity.sh`](preserve-cachyos-identity.sh) | Keep your distro's name, Plymouth theme, fastfetch and the Omarchy session's own art. `--apply`, `--branding`, `--undo` |
-| `omarchy-oc-verify-boot` | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Prove you can still boot. `--rebuild` |
+| `omarchy-oc-verify-boot` | [`verify-reboot-safety.sh`](verify-reboot-safety.sh) | Inspect boot prerequisites. `--rebuild` |
 | `omarchy-oc-clean-boot` | [`clean-stale-boot-entries.sh`](clean-stale-boot-entries.sh) | Reclaim orphaned `/boot/<token>/` dirs. `--archive`, `--delete` |
 | `omarchy-oc-update` | [`update-omarchy-on-cachyos.sh`](update-omarchy-on-cachyos.sh) | Is a newer release out, and install it. `--notify`, `--refresh`, `--install`, `--no-restart` |
 | `omarchy-oc-uninstall` | [`uninstall-omarchy-on-cachyos.sh`](uninstall-omarchy-on-cachyos.sh) | Reverse the install. `--keep-apps` |
@@ -375,7 +376,7 @@ If you *want* your distribution's logo in Omarchy's About window too, that is op
 reversible, and deliberately not part of `--apply`:
 
 ```bash
-ooc preserve-identity --branding    # opt in; --undo puts Omarchy's back
+ooc preserve-identity --branding    # opt in; --undo-branding restores Omarchy artwork only
 ```
 
 
@@ -496,3 +497,7 @@ this repo just helps it share a machine.
 <sub>No warranty. It edits <code>pacman.conf</code> and replaces two binaries. Read the scripts.</sub>
 
 </div>
+
+## Stability and recovery limits
+
+Subsequent recovery fixes were developed with OpenAI Codex; see [provenance](PROVENANCE.md). Read [the stability review](docs/stability-review.md) for recovery fixes after 1.4.6, shared-file behavior, validation limits and the privacy correction. Passing checks do not guarantee bootability or complete rollback.

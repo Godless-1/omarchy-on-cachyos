@@ -17,7 +17,7 @@
 set -uo pipefail
 HERE="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
 TOOL="$HERE/clean-stale-boot-entries.sh"
-LIVE=1c0f28fab0c443338dde8610e5e938b7
+LIVE=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 DEAD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 PASS=0; FAIL=0
 

@@ -5,7 +5,7 @@
 # Reverse install-omarchy-on-cachyos.sh. Leaves Plasma and the CachyOS repos alone.
 #
 # Usage: ./uninstall-omarchy-on-cachyos.sh [--keep-apps] [--dry-run]
-#   --keep-apps  remove the session + repo but keep the installed applications
+#   --keep-apps  remove the session; retain applications, repository and safeguards
 
 set -euo pipefail
 
@@ -42,7 +42,35 @@ run_to() {
 
 # Refusing root is right for a real removal and meaningless against a fixture.
 [[ -z $OC_ROOT ]] && (( EUID == 0 )) && { echo "Run as your normal user." >&2; exit 1; }
-sudo -v
+(( DRYRUN )) || sudo -v
+
+# Resolve the whole removal before changing session files or safeguards.
+# -R deliberately avoids recursively removing applications and dependencies.
+if (( ! KEEP_APPS )); then
+  installed=$(pacman -Qq) || { warn "Cannot read installed packages; nothing removed."; exit 1; }
+  packages=()
+  for p in omarchy omarchy-settings; do
+    if grep -qx "$p" <<< "$installed"; then packages+=("$p"); fi
+  done
+  if (( ${#packages[@]} )); then
+    if ! run sudo pacman -R --noconfirm "${packages[@]}"; then
+      warn "Package removal failed. Repository, guards and session files are retained."
+      warn "Resolve the pacman error and rerun this command; do not remove guards manually."
+      exit 1
+    fi
+    if (( ! DRYRUN )); then
+      remaining=$(pacman -Qq) || { warn "Cannot verify removal; safeguards retained."; exit 1; }
+      for p in "${packages[@]}"; do
+        if grep -qx "$p" <<< "$remaining"; then
+          warn "$p is still installed; safeguards retained. Resolve the removal and retry."
+          exit 1
+        fi
+      done
+    fi
+  fi
+else
+  log "--keep-apps: leaving packages installed, with repository and safeguards retained"
+fi
 
 # Do this before anything is removed. A nested window that was killed mid-session
 # leaves KDE's Meta+ shortcuts lent out, and uninstalling the helper that holds
@@ -72,21 +100,16 @@ if [[ -d $_skilldst ]]; then
   done
   log "Unlinked $_unlinked skill(s); anything you added yourself was left alone"
   # Only if we emptied it. rmdir refuses a non-empty directory, which is the check.
-  rmdir "$_skilldst" 2>/dev/null && echo "      removed the now-empty $_skilldst" || true
+  if (( ! DRYRUN )); then
+    rmdir "$_skilldst" 2>/dev/null || true
+  fi
 fi
 
 log "Removing the Omarchy session entry"
 run sudo rm -f "$SESSION"
 
-if (( ! KEEP_APPS )); then
-  log "Removing omarchy packages (leaving shared deps like hyprland/pipewire in place)"
-  for p in omarchy omarchy-settings; do
-    pacman -Qq "$p" &>/dev/null && run sudo pacman -Rns --noconfirm "$p" || true
-  done
-else
-  log "--keep-apps: leaving packages installed"
-fi
 
+if (( ! KEEP_APPS )); then
 log "Removing the [omarchy] repo from $PACCONF"
 if grep -q '^\[omarchy\]' "$PACCONF"; then
   run sudo cp "$PACCONF" "$PACCONF.pre-omarchy-removal"
@@ -111,6 +134,8 @@ if grep -q 'omarchy-on-cachyos guards' "$PACCONF" && (( ! DRYRUN )); then
   sudo mv "$PACCONF".new "$PACCONF"
 fi
 
+fi
+
 log "Checking for leftover Omarchy files in /etc"
 for f in "$OC_ROOT"/etc/mkinitcpio.conf.d/omarchy_hooks.conf "$OC_ROOT"/etc/limine-entry-tool.d/omarchy-*.conf; do
   # An argument vector, like every other call here. This was one quoted string,
@@ -129,13 +154,12 @@ if (( ! DRYRUN )); then
   grep -q rd.luks /proc/cmdline && [[ $eff != *sd-encrypt* ]] && warn "sd-encrypt MISSING - do not reboot until fixed."
 fi
 
-log "Refreshing package databases"
-run sudo pacman -Sy
+log "Repository edits take effect on your next normal full system upgrade (pacman -Syu)."
 
 cat <<EOF
 
 $(log "Removal complete.")
-  Your ~/.config/hypr and ~/.config/omarchy were left in place (harmless).
+  Your ~/.config/hypr and ~/.config/omarchy were left in place. Other applications may still use them.
   Delete them manually if you want a clean slate.
   Config backups from install time live in ~/.local/share/omarchy-cachyos/
 

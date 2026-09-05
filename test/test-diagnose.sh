@@ -256,7 +256,7 @@ else
   nope "duplicate-entry finding must use warn(); bad() triggers a false DO NOT REBOOT"
 fi
 
-MIDF=1c0f28fab0c443338dde8610e5e938b7
+MIDF=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 # The counting rule, lifted from the script so the test cannot drift from it.
 count_os() {

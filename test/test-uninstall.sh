@@ -54,7 +54,12 @@ new_root() { # new_root [--leftovers]
   cat > "$r/bin/pacman" <<'EOF'
 #!/bin/bash
 printf '%s\n' "$*" >> "${PACMAN_LOG:?}"
-case "$1" in -Qq) exit 0 ;; esac   # every queried package is "installed"
+case "$1" in
+  -Qq) [[ ${FAIL_QUERY:-0} == 1 ]] && exit 1
+        [[ -f ${PACMAN_LOG}.removed ]] || printf 'omarchy\nomarchy-settings\n'; exit 0 ;;
+  -R) [[ ${FAIL_REMOVAL:-0} == 1 ]] && exit 1
+      [[ ${NO_REMOVE:-0} == 1 ]] || touch "${PACMAN_LOG}.removed" ;;
+esac
 exit 0
 EOF
   chmod +x "$r/bin/pacman"
@@ -81,8 +86,8 @@ else nope "the guards block is still in pacman.conf"; fi
 if grep -q '^\[cachyos\]' "$R/etc/pacman.conf"; then ok "  and leaves your own repos alone"
 else nope "it removed [cachyos] too"; fi
 remains "keeps a copy of pacman.conf from before the removal" "$R/etc/pacman.conf.pre-omarchy-removal"
-has "asks pacman to remove omarchy" "-Rns --noconfirm omarchy" "$(cat "$R/pacman.log")"
-has "  and omarchy-settings" "-Rns --noconfirm omarchy-settings" "$(cat "$R/pacman.log")"
+has "asks pacman to remove omarchy" "-R --noconfirm omarchy omarchy-settings" "$(cat "$R/pacman.log")"
+has "  and omarchy-settings in the same transaction" "-R --noconfirm omarchy omarchy-settings" "$(cat "$R/pacman.log")"
 gone    "unlinks the skill pointing into the Omarchy package" "$R/home/.claude/skills/omarchy"
 remains "  and leaves a skill of your own alone" "$R/home/.claude/skills/mine"
 rm -rf "$R"
@@ -115,7 +120,7 @@ printf '\n\033[1;34m== --keep-apps and --dry-run\033[0m\n'
 R=$(new_root)
 out=$(run "$R" --keep-apps)
 has "--keep-apps says it is leaving the packages" "leaving packages installed" "$out"
-if ! grep -q -- '-Rns' "$R/pacman.log" 2>/dev/null; then ok "  and asks pacman to remove nothing"
+if ! grep -q -- '-R ' "$R/pacman.log" 2>/dev/null; then ok "  and asks pacman to remove nothing"
 else nope "  but still removed packages"; fi
 gone "  while still removing the session entry" "$R/usr/share/wayland-sessions/omarchy.desktop"
 rm -rf "$R"
@@ -128,12 +133,43 @@ if [[ $sum_before == "$sum_after" ]]; then ok "--dry-run changes nothing on disk
 else nope "--dry-run modified the tree"; fi
 # Querying is allowed - `-Qq` decides whether a package is even installed. What
 # a dry run must never do is change anything.
-if ! grep -qE -- '-(Rns|Sy)' "$R/pacman.log" 2>/dev/null; then
+if ! grep -qE -- '-(R|Sy)' "$R/pacman.log" 2>/dev/null; then
   ok "  and asks pacman to change nothing, only to answer"
 else
   nope "  but told pacman to act: $(cat "$R/pacman.log")"
 fi
 rm -rf "$R"
+
+# Previously a failed pacman transaction silently stripped the safeguards.
+R=$(new_root)
+before=$(cat "$R/etc/pacman.conf")
+out=$(FAIL_REMOVAL=1 run "$R"); rc=$?
+if (( rc != 0 )); then ok "failed removal exits nonzero"; else nope "failure was swallowed"; fi
+remains "failure retains session" "$R/usr/share/wayland-sessions/omarchy.desktop"
+if [[ $(cat "$R/etc/pacman.conf") == "$before" ]]; then ok "failure retains repository and guards"; else nope "failure removed protection"; fi
+rm -rf "$R"
+R=$(new_root)
+before=$(cat "$R/etc/pacman.conf")
+run "$R" --keep-apps >/dev/null
+if [[ $(cat "$R/etc/pacman.conf") == "$before" ]]; then ok "keep-apps retains repository and guards"; else nope "keep-apps removed protection"; fi
+rm -rf "$R"
+R=$(new_root)
+rm "$R/home/.claude/skills/omarchy" "$R/home/.claude/skills/mine"
+run "$R" --dry-run >/dev/null
+remains "dry-run preserves an empty skills directory" "$R/home/.claude/skills"
+rm -rf "$R"
+
+for fault in FAIL_QUERY NO_REMOVE; do
+  R=$(new_root)
+  before=$(cat "$R/etc/pacman.conf")
+  export "$fault=1"
+  out=$(run "$R"); rc=$?
+  unset "$fault"
+  if (( rc != 0 )); then ok "$fault stops uninstall"; else nope "$fault was ignored"; fi
+  if [[ $(cat "$R/etc/pacman.conf") == "$before" ]]; then ok "$fault retains safeguards"; else nope "$fault stripped guards"; fi
+  remains "$fault retains session" "$R/usr/share/wayland-sessions/omarchy.desktop"
+  rm -rf "$R"
+done
 
 printf '\n\033[1;34m== results\033[0m\n'
 printf '  passed: %d   failed: %d\n\n' "$PASS" "$FAIL"

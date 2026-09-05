@@ -11,7 +11,8 @@
 #
 #   ./preserve-cachyos-identity.sh                 # report only
 #   ./preserve-cachyos-identity.sh --apply         # restore + install the hook
-#   ./preserve-cachyos-identity.sh --undo          # remove the hook, keep Omarchy's
+#   ./preserve-cachyos-identity.sh --undo-branding # restore session artwork only (also --undo)
+#   ./preserve-cachyos-identity.sh --remove-protection # remove host identity safeguards
 #   ./preserve-cachyos-identity.sh --branding      # OPTIONAL, opt-in: also put your
 #                                                  # distro's logo in Omarchy's own
 #                                                  # About window and screensaver.
@@ -33,7 +34,7 @@ PACCONF=/etc/pacman.conf
 FASTFETCH=etc/fastfetch/config.jsonc
 
 for a in "$@"; do case "$a" in
-  --apply) MODE=apply ;; --undo) MODE=undo ;; --branding) MODE=branding ;;
+  --apply) MODE=apply ;; --undo|--undo-branding) MODE=undo_branding ;; --remove-protection) MODE=remove_protection ;; --branding) MODE=branding ;;
   -h|--help) sed -n '4,17p' "$0" | sed 's/^# \?//'; exit 0 ;;
   *) echo "unknown option: $a" >&2; exit 1 ;;
 esac; done
@@ -160,7 +161,14 @@ undo_session_branding() {
 if [[ $MODE == branding ]]; then
   log "Re-branding the Omarchy session's About and screensaver"
   apply_session_branding
-  log "Done. Undo with: $0 --undo"
+  log "Done. Restore artwork with: $0 --undo-branding"
+  exit 0
+fi
+
+if [[ $MODE == undo_branding ]]; then
+  mkdir -p "$BRAND_DIR"
+  undo_session_branding
+  log "Host identity protection remains installed."
   exit 0
 fi
 
@@ -180,12 +188,10 @@ fi
 sudo -v || die "sudo required" "Nothing has been changed." "To see current state without sudo:  $0"
 [[ -x $BRANDING ]] || die "$BRANDING not found - this script targets CachyOS" "Nothing has been changed." "On another distribution, restore identity with your own tooling, then" "adapt the PostTransaction hook this script installs (see the source)." "Your os-release right now:  grep PRETTY_NAME /etc/os-release"
 
-if [[ $MODE == undo ]]; then
+if [[ $MODE == remove_protection ]]; then
   log "Removing the identity hook"
   sudo rm -f "$HOOK" "$HELPER"
   sudo sed -i "\|^NoExtract = $FASTFETCH\$|d" "$PACCONF"
-  log "Restoring Omarchy's own session branding"
-  undo_session_branding
   log "Done. Omarchy's branding will apply again on its next update."
   exit 0
 fi
@@ -271,7 +277,8 @@ $(log "Done.")
               sudo limine-mkinitcpio
             or ./verify-reboot-safety.sh --rebuild
 
-  Undo:     $0 --undo
+  Remove host protection: $0 --remove-protection
+  Restore session artwork: $0 --undo-branding
 EOF
 
 # Changing the distribution name is not only cosmetic. limine-entry-tool titles
