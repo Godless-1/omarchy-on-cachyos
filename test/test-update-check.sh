@@ -118,9 +118,18 @@ reset; export FAKE_INSTALLED=1.4.3.3-1; stage_cache 1.4.3.3
 is "pkgrel does not read as newer"          ""   "$("$TOOL" --notify 2>&1)"
 
 printf '\n\033[1;34m== --install refuses to act without cause\033[0m\n'
-reset; export FAKE_INSTALLED=2.0.0; stage_cache 1.0.0
-has "says nothing to do when current"       "nothing to install" "$("$TOOL" --install 2>&1)"
-is "  and never called curl"                "0"  "$(curl_calls)"
+reset; export FAKE_INSTALLED=2.0.0; stage_cache 1.0.0; stage_api 2.0.0
+has "says nothing to do after a live check" "nothing to install" "$("$TOOL" --install 2>&1)"
+is "explicit install checks even a fresh cache" "1" "$(curl_calls)"
+reset; export FAKE_INSTALLED=1.4.6; stage_cache 1.4.6
+printf '{"tag_name":"v1.4.7","assets":[]}' > "$CURL_BODY"
+out=$("$TOOL" --install --no-restart 2>&1); rc=$?
+has "discovers 1.4.7 despite fresh 1.4.6 cache" "Release v1.4.7 has no package" "$out"
+is "refuses missing package without installing" "1" "$rc"
+reset; stage_cache 1.4.6
+out=$("$TOOL" --install 2>&1); rc=$?
+is "network failure fails the explicit upgrade" "1" "$rc"
+has "does not mistake stale data for current" "Could not check GitHub" "$out"
 
 printf '\n\033[1;34m== results\033[0m\n'
 printf '  passed: %d   failed: %d\n\n' "$PASS" "$FAIL"

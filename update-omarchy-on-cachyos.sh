@@ -166,7 +166,12 @@ report)
 
 install)
   cur=$(current_version)
-  cache_is_stale && refresh_cache
+  # An explicit upgrade must not trust the daily notification cache.
+  if ! refresh_cache; then
+    echo "Could not check GitHub for the latest release. Nothing installed." >&2
+    echo "Check your connection and update-check opt-out settings, then retry ooc update." >&2
+    exit 1
+  fi
   latest=$(cache_field latest 2>/dev/null) || latest=""
   [[ -n $latest ]] || { echo "Could not reach GitHub to find the latest release." >&2; exit 1; }
   if ! update_available "$cur" "$latest"; then

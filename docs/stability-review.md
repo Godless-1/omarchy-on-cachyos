@@ -33,3 +33,7 @@ Older commits, source archives and binary packages may retain the original value
 ## Release housekeeping
 
 GitHub releases older than 1.4.6 were privately archived before removal at the maintainer's request. Source tags remain available for historical inspection. Do not treat an old tag as a recommended installation. The original 1.4.6 package does not include the subsequent fixes described here.
+
+## Explicit updates and cached notifications
+
+Versions through 1.4.7 can report “nothing to install” using a release cache less than a day old. Run `ooc updates --refresh` and, only if that succeeds, `ooc update --no-restart`. The subsequent source fix always checks GitHub for an explicit install and fails clearly if it cannot check, while startup notifications remain cache-only.
