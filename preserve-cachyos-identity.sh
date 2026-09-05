@@ -145,6 +145,7 @@ undo_session_branding() {
   local f restored=0
   for f in about.txt screensaver.txt; do
     [[ -f $BRAND_STATE/original/$f ]] || continue
+    mkdir -p "$BRAND_DIR"
     install -m644 "$BRAND_STATE/original/$f" "$BRAND_DIR/$f" && restored=$((restored + 1))
   done
   if (( restored )); then
@@ -166,9 +167,8 @@ if [[ $MODE == branding ]]; then
 fi
 
 if [[ $MODE == undo_branding ]]; then
-  mkdir -p "$BRAND_DIR"
   undo_session_branding
-  log "Host identity protection remains installed."
+  log "Host identity protection was not changed."
   exit 0
 fi
 
